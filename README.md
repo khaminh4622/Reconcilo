@@ -31,14 +31,66 @@ python -m uvicorn main:app --reload
 Open <http://127.0.0.1:8000>, upload a PDF from `backend/fixtures/pdfs/`, and
 watch the workflow run.
 
+## Where does the API key go?
+
+**Not on GitHub.** GitHub only stores code; it cannot run the app, so there is
+no settings page for secrets there. The key goes into a file on **your own
+machine**: `backend/.env`.
+
+That file is gitignored on purpose, so your key is never published. The
+repository ships `backend/.env.example` instead - a template listing every
+variable. The flow is:
+
+```
+backend/.env.example  (in the repo, no secrets)
+        |
+        |  Copy-Item .env.example .env
+        v
+backend/.env          (on your machine, gitignored - put your key here)
+```
+
+### Steps
+
+1. Copy the template:
+   ```powershell
+   cd backend
+   Copy-Item .env.example .env
+   ```
+2. Open `.env` in a text editor and paste your key into `LLM_API_KEY`.
+   `.env.example` lists three ready-made provider blocks; keep **one** uncommented
+   and delete or comment the others.
+3. Restart the server. The dashboard header turns green and names the model.
+
+If no key is configured, the app still starts - but every analysis returns
+`analysis_source: "unavailable"` with a clear explanation rather than inventing
+a result. That is intentional.
+
 ## Configuration
 
-Agent 3 supports any OpenAI-compatible endpoint. Set these in `backend/.env`:
+Agent 3 supports any OpenAI-compatible endpoint. The three supported setups:
 
+**xAI Grok**
 ```dotenv
-LLM_API_KEY=your_key
+LLM_API_KEY=xai-...
+LLM_BASE_URL=https://api.x.ai/v1
+LLM_MODEL=grok-4.20-0309-non-reasoning
+LLM_RESPONSE_FORMAT=json_object
+```
+
+**OpenAI**
+```dotenv
+LLM_API_KEY=sk-...
 LLM_BASE_URL=https://api.openai.com/v1
 LLM_MODEL=gpt-4o-mini
+LLM_RESPONSE_FORMAT=json_schema
+```
+
+**Local Ollama (free, no key, slower)**
+```dotenv
+LLM_API_KEY=ollama
+LLM_BASE_URL=http://127.0.0.1:11434/v1
+LLM_MODEL=qwen3:4b
+LLM_TIMEOUT_SECONDS=900
 ```
 
 A local [Ollama](https://ollama.com) setup works too and needs no key — see
