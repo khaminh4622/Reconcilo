@@ -22,6 +22,7 @@ from agent3.schemas import (
 )
 from agent3.service import Agent3Service
 from agent3.synthetic_data import create_synthetic_dataset, load_synthetic_dataset, reference_customers
+from workflow.agent1_history import InvoiceHistoryRepository
 from workflow.orchestrator import WorkflowError, WorkflowOrchestrator
 from workflow.repository import WorkflowRepository
 from workflow.schemas import CaseSummary, WorkflowCase
@@ -193,19 +194,306 @@ def create_app(service: Agent3Service | None = None, dataset_directory: Path | N
         except WorkflowError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+    @app.get("/workflow/cases/{case_id}/investigation")
+    def get_investigation(case_id: str) -> dict[str, Any]:
+        """Agent 1's duplicate investigation for a case, if it has run."""
+
+        case = app.state.orchestrator.get(case_id)
+        if case is None:
+            raise HTTPException(status_code=404, detail="Case not found.")
+        report = next((r for r in reversed(case.reports) if r.agent.value == "agent_1"), None)
+        if report is None:
+            raise HTTPException(status_code=404, detail="Agent 1 has not investigated this case.")
+        return {
+            "case_id": case.case_id,
+            "invoice_number": case.invoice_number,
+            "vendor": case.vendor_name,
+            "customer": case.customer_name,
+            "status": report.data.get("status"),
+            "summary": report.summary,
+            "report": report.model_dump(mode="json"),
+            "investigation": report.data.get("investigation"),
+        }
+
+    @app.get("/workflow/invoice-history")
+    def invoice_history(customer: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+        """Prior invoices Agent 1 compares against."""
+
+        repository = InvoiceHistoryRepository(app.state.workflow_repository.path)
+        records = repository.list_records(customer=customer, limit=limit)
+        return [
+            {
+                "record_id": record.record_id,
+                "invoice_number": record.invoice_number,
+                "vendor": record.vendor,
+                "customer": record.customer,
+                "amount": str(record.amount) if record.amount is not None else None,
+                "currency": record.currency,
+                "issue_date": record.issue_date,
+                "description": record.description,
+            }
+            for record in records
+        ]
+
     @app.post("/workflow/cases/{case_id}/execute", response_model=WorkflowCase)
     def execute_case(case_id: str, request: dict[str, Any] | None = None) -> WorkflowCase:
-        """Retry execution of an already-approved case (idempotency still applies)."""
+        """Execute (or re-inspect) the approved synthetic payment for a case."""
 
         payload = request or {}
         try:
             return app.state.orchestrator.execute_payment(
                 case_id,
-                simulate=str(payload.get("simulate") or "SUCCESS"),
+                simulate=payload.get("simulate"),
                 failure_reason=payload.get("failure_reason"),
             )
         except WorkflowError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/workflow/cases/{case_id}/receipt")
+    def get_receipt(case_id: str) -> dict[str, Any]:
+        """The verified synthetic payment receipt for a case, if settled."""
+
+        case = app.state.orchestrator.get(case_id)
+        if case is None:
+            raise HTTPException(status_code=404, detail="Case not found.")
+        receipt = case.receipt
+        if receipt is None:
+            raise HTTPException(status_code=404, detail="No receipt: payment has not settled.")
+        return receipt.model_dump(mode="json")
+
+    @app.get("/workflow/invoices/{invoice_number}/payments")
+    def invoice_payments(invoice_number: str) -> dict[str, Any]:
+        """Every payment attempt for an invoice, including failed and pending ones."""
+
+        attempts = app.state.orchestrator.execution.store.list_for_invoice(invoice_number)
+        return {
+            "invoice_number": invoice_number,
+            "count": len(attempts),
+            "settled": [a.model_dump(mode="json") for a in attempts if a.status == "SUCCESS"],
+            "pending": [a.model_dump(mode="json") for a in attempts if a.status == "PENDING"],
+            "failed": [a.model_dump(mode="json") for a in attempts if a.status == "FAILED"],
+            "attempts": [a.model_dump(mode="json") for a in attempts],
+        }
+
+    # ------------------------------------------------------------------
+    # Bank statement import (Agent 2) - never routed through Agent 3
+    # ------------------------------------------------------------------
+    @app.post("/bank/import")
+    async def import_bank_statement(
+        file: Annotated[UploadFile, File(description="Synthetic bank statement (PDF or CSV)")],
+        authorized_test_mode: bool = False,
+        developer_key: str | None = None,
+    ) -> dict[str, Any]:
+        """Developer-only: import a simulated bank statement as test evidence.
+
+        The customer workflow never calls this. Bank evidence is produced
+        automatically by the payment simulator, so this endpoint exists only for
+        developer testing and requires the configured developer key.
+        """
+
+        if not authorized_test_mode:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Bank import is a developer-only testing tool. Customers never upload bank "
+                    "statements; GhostLedger creates bank records automatically."
+                ),
+            )
+        expected_key = (os.getenv("GHOSTLEDGER_DEVELOPER_KEY") or "").strip()
+        if not expected_key:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Developer bank import is disabled. Set GHOSTLEDGER_DEVELOPER_KEY to enable "
+                    "this testing tool."
+                ),
+            )
+        if (developer_key or "").strip() != expected_key:
+            raise HTTPException(status_code=403, detail="Invalid developer key.")
+
+        from workflow.bank_importer import (
+            BankImportError,
+            BankTransactionStore,
+            document_hash,
+            parse_csv,
+            parse_pdf_text,
+        )
+
+        content = await file.read()
+        if not content:
+            raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+        if len(content) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="The statement is too large.")
+
+        name = (file.filename or "statement").lower()
+        try:
+            if name.endswith(".csv") or (file.content_type or "").startswith("text/"):
+                rows = parse_csv(content)
+                source_type = "csv"
+            else:
+                from agent3.document_reader import read_pdf_upload
+
+                document = read_pdf_upload(file.filename or "statement.pdf", content)
+                rows = parse_pdf_text(document.text)
+                source_type = "pdf"
+        except BankImportError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=422, detail=f"Could not read the statement: {exc}") from exc
+
+        store = BankTransactionStore(app.state.workflow_repository.path)
+        result = store.import_rows(
+            rows,
+            filename=file.filename,
+            source_type=source_type,
+            digest=document_hash(content),
+        )
+        result["source_type"] = source_type
+        result["simulated"] = True
+        result["transactions"] = store.list_transactions()
+        return result
+
+    # ------------------------------------------------------------------
+    # Developer-only failure simulator (Agent 4 testing)
+    # ------------------------------------------------------------------
+    def _require_developer(developer_key: str | None = None) -> None:
+        """Allow the failure simulator only on a local development machine.
+
+        No separate password is needed: the guard is "this request came from
+        localhost". Set GHOSTLEDGER_DISABLE_SIMULATOR=1 to switch it off.
+        """
+
+        if (os.getenv("GHOSTLEDGER_DISABLE_SIMULATOR") or "").strip().lower() in {"1", "true", "yes"}:
+            raise HTTPException(
+                status_code=403,
+                detail="The failure simulator is disabled on this deployment.",
+            )
+
+    def _is_local_request(request: Request) -> bool:
+        host = (request.client.host if request.client else "") or ""
+        return host in {"127.0.0.1", "::1", "localhost", "testclient"}
+
+    @app.get("/developer/failure-scenarios")
+    def list_failure_scenarios(request: Request) -> dict[str, Any]:
+        _require_developer()
+        if not _is_local_request(request):
+            raise HTTPException(status_code=403, detail="Developer tools are local-only.")
+        from workflow.failure_simulator import failure_scenarios
+
+        return {"simulated": True, "scenarios": failure_scenarios()}
+
+    @app.post("/developer/simulate-failure")
+    def simulate_failure(
+        request: Request,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Create a synthetic failed payment so Agent 4 can be tested."""
+
+        _require_developer()
+        if not _is_local_request(request):
+            raise HTTPException(status_code=403, detail="Developer tools are local-only.")
+        from decimal import Decimal
+
+        from workflow.failure_simulator import FailureSimulationError, FailureSimulator
+
+        payload = payload or {}
+        try:
+            result = FailureSimulator(app.state.workflow_repository.path).simulate(
+                invoice_number=payload.get("invoice_number"),
+                amount=Decimal(str(payload.get("amount") or "0")),
+                currency=payload.get("currency") or "USD",
+                payee=payload.get("payee"),
+                customer_name=payload.get("customer_name"),
+                failure_code=payload.get("failure_code") or payload.get("scenario"),
+            )
+        except FailureSimulationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid amount: {exc}") from exc
+        return {"simulated": True, "disclaimer": "SIMULATED failure. No real money moved.", **result}
+
+    @app.get("/bank/ledger")
+    def mock_bank_ledger(
+        search: str | None = None,
+        status: str | None = None,
+        invoice: str | None = None,
+    ) -> dict[str, Any]:
+        """The Mock Bank Ledger: every transaction the simulator created."""
+
+        from workflow.mock_bank import MockBank
+
+        bank = MockBank(app.state.workflow_repository.path)
+        rows = bank.ledger()
+        if invoice:
+            rows = [r for r in rows if (r.get("invoice_number") or "").casefold() == invoice.casefold()]
+        if status:
+            wanted = status.upper()
+            rows = [r for r in rows if (r.get("status") or "").upper() == wanted]
+        if search:
+            needle = search.casefold()
+            rows = [
+                r for r in rows
+                if needle in " ".join(
+                    str(r.get(f) or "") for f in (
+                        "entry_id", "payment_reference", "invoice_number",
+                        "customer_name", "vendor_name", "description", "scenario",
+                    )
+                ).casefold()
+            ]
+        balances = bank.balances()
+        return {
+            "simulated": True,
+            "disclaimer": "SIMULATED - NO REAL MONEY. All transactions are fictional.",
+            "count": len(rows),
+            "balances": {k: f"{v:.2f}" for k, v in balances.items()},
+            "transactions": rows,
+        }
+
+    @app.get("/bank/ledger/{entry_id}")
+    def mock_bank_entry(entry_id: str) -> dict[str, Any]:
+        """One bank transaction with its complete settlement history."""
+
+        from workflow.mock_bank import MockBank
+
+        bank = MockBank(app.state.workflow_repository.path)
+        entry = bank.entry(entry_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail="Bank transaction not found.")
+        history = bank.history_for_reference(entry["payment_reference"]) if entry["payment_reference"] else []
+        instruction = None
+        if entry.get("instruction_id"):
+            for row in history:
+                instruction = row.get("instruction_id")
+                break
+        return {
+            "simulated": True,
+            "disclaimer": "SIMULATED - NO REAL MONEY.",
+            "transaction": entry,
+            "settlement_history": history,
+            "history_count": len(history),
+        }
+
+    @app.get("/bank/transactions")
+    def list_bank_transactions(include_outgoing: bool = False) -> dict[str, Any]:
+        from workflow.bank_importer import BankTransactionStore
+
+        store = BankTransactionStore(app.state.workflow_repository.path)
+        transactions = store.list_transactions(include_outgoing=include_outgoing)
+        return {
+            "count": len(transactions),
+            "simulated": True,
+            "transactions": transactions,
+            "imports": store.import_history(),
+        }
+
+    @app.post("/bank/reconcile")
+    def reconcile_bank() -> dict[str, Any]:
+        """Compare expected payments against imported bank evidence."""
+
+        from workflow.bank_reconciliation import ReconciliationService
+
+        report = ReconciliationService(app.state.workflow_repository.path).reconcile()
+        return report.model_dump(mode="json")
 
     @app.get("/workflow/agents")
     def list_agents() -> list[dict[str, str]]:

@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -38,6 +38,8 @@ class Intent(str, Enum):
     bank_reconciliation = "bank_reconciliation"
     payment_failure = "payment_failure"
     payment_status_dispute = "payment_status_dispute"
+    # "Did my earlier payment arrive?" - answered from the Mock Bank ledger.
+    payment_status_check = "PAYMENT_STATUS_CHECK"
     unknown = "unknown"
 
 
@@ -182,20 +184,13 @@ class ApprovalRecord(WorkflowModel):
     currency: str | None = None
     note: str | None = None
     revoked: bool = False
+    # Optional expiry; None means the approval does not expire.
+    expires_at: str | None = None
 
-
-class SyntheticTransaction(WorkflowModel):
-    """A simulated bank transaction. No real money moves."""
-
-    transaction_id: str = Field(default_factory=lambda: str(uuid4()))
-    reference: str
-    amount: Decimal
-    currency: str
-    direction: Literal["credit", "debit"]
-    counterparty: str | None = None
-    status: Literal["settled", "pending", "failed", "returned"] = "settled"
-    value_date: str | None = None
-    source: Literal["customer_report", "synthetic_bank"] = "synthetic_bank"
+    def is_expired(self, now: str | None = None) -> bool:
+        if not self.expires_at:
+            return False
+        return (now or utc_now()) > self.expires_at
 
 
 class PaymentAttempt(WorkflowModel):
@@ -208,10 +203,67 @@ class PaymentAttempt(WorkflowModel):
     amount: Decimal | None = None
     currency: str | None = None
     invoice_number: str | None = None
+    case_id: str | None = None
+    # The raw provider view: INITIATED / PROCESSING / SETTLED / FAILED / UNKNOWN.
+    provider_status: Literal[
+        "INITIATED", "PROCESSING", "SETTLED", "FAILED", "UNKNOWN",
+        "PENDING", "PARTIAL", "MISSING_SETTLEMENT",
+    ] = "INITIATED"
+    # The settled business outcome used by the workflow.
     status: Literal["SUCCESS", "FAILED", "PENDING"] = "PENDING"
     failure_reason: str | None = None
+    failure_code: str | None = None
     transaction_id: str | None = None
+    # Synthetic provider reference, e.g. SP-1A2B3C4D5E6F.
+    provider_reference: str | None = None
+    settlement_reference: str | None = None
+    settled_at: str | None = None
+    verified: bool = False
     attempted_at: str = Field(default_factory=utc_now)
+
+
+class PaymentReceipt(WorkflowModel):
+    """Proof of a verified synthetic settlement, shown to the user."""
+
+    receipt_id: str = Field(default_factory=lambda: str(uuid4()))
+    case_id: str
+    invoice_number: str | None = None
+    vendor_name: str | None = None
+    customer_name: str | None = None
+    amount: Decimal | None = None
+    currency: str | None = None
+    provider_reference: str | None = None
+    settlement_reference: str | None = None
+    transaction_id: str | None = None
+    approved_by: str | None = None
+    approved_at: str | None = None
+    settled_at: str | None = None
+    outcome: Literal["SETTLED", "FAILED", "PENDING"] = "SETTLED"
+    # Stated plainly on every receipt so nobody mistakes it for real money.
+    synthetic: bool = True
+    disclaimer: str = (
+        "SIMULATED PAYMENT - no real funds were transferred. This receipt is generated "
+        "by GhostLedger's synthetic payment provider for testing."
+    )
+    verification: list[str] = Field(default_factory=list)
+
+
+class SyntheticTransaction(WorkflowModel):
+    """A simulated bank transaction. No real money moves."""
+
+    # Deterministic so re-seeding is idempotent: the same reference, amount and
+    # date always produce the same id, which keeps INSERT OR IGNORE honest.
+    transaction_id: str | None = None
+    reference: str
+    amount: Decimal
+    currency: str
+    direction: Literal["credit", "debit"]
+    counterparty: str | None = None
+    status: Literal["settled", "pending", "failed", "returned"] = "settled"
+    value_date: str | None = None
+    # "agent5_settlement" marks a row Agent 5 wrote itself, which Agent 2 must
+    # never treat as independent bank evidence.
+    source: Literal["customer_report", "synthetic_bank", "agent5_settlement"] = "synthetic_bank"
 
 
 class AuditEntry(WorkflowModel):
@@ -233,6 +285,8 @@ class AgentRun(WorkflowModel):
     agent_name: str
     status: AgentRunStatus = AgentRunStatus.waiting
     order: int = 0
+    # Distinguishes Agent 5's two responsibilities in the same case.
+    phase: str | None = None
     summary: str | None = None
     started_at: str | None = None
     completed_at: str | None = None
@@ -261,6 +315,12 @@ class WorkflowCase(WorkflowModel):
     reports: list[AgentReport] = Field(default_factory=list)
     approval: ApprovalRecord | None = None
     payment: PaymentAttempt | None = None
+    # Agent 2's post-payment reconciliation verdict (dict for forward-compat).
+    reconciliation: dict[str, Any] | None = None
+    # Issued only when a synthetic settlement has been verified.
+    receipt: PaymentReceipt | None = None
+    # Every attempt for this invoice, retained for audit (never deleted).
+    payment_history: list[PaymentAttempt] = Field(default_factory=list)
     # The most recent Agent 5 report, so callers can inspect the execution
     # outcome even after a later agent (e.g. Agent 4) appended its own report.
     last_payment_report: AgentReport | None = None
@@ -282,8 +342,19 @@ class WorkflowCase(WorkflowModel):
         )
         self.updated_at = utc_now()
 
-    def run_for(self, agent: AgentId) -> AgentRun | None:
-        return next((run for run in self.agent_runs if run.agent == agent), None)
+    def run_for(self, agent: AgentId, phase: str | None = None) -> AgentRun | None:
+        """First run for an agent, optionally filtered by phase.
+
+        Agent 5 appears twice (initiation, then confirmation), so callers that
+        care about one phase must say which.
+        """
+
+        if phase is None:
+            return next((run for run in self.agent_runs if run.agent == agent), None)
+        return next(
+            (run for run in self.agent_runs if run.agent == agent and run.phase == phase),
+            None,
+        )
 
 
 class CaseSummary(WorkflowModel):

@@ -220,6 +220,10 @@ PRIMARY_AGENT_RULES: dict[PrimaryProblem, RecommendedAgent] = {
 # Language cues used only when the model omits primary_problem, or provides a
 # value the enum does not recognise. Order matters: a duplicate payment is the
 # most specific and is tested before generic reconciliation wording.
+# Language cues used only when the model omits primary_problem, or supplies a
+# value the enum does not recognise. Order matters: the most specific and most
+# consequential intents are tested first, so a document that mentions both a
+# duplicate and a payment status is classified as a duplicate.
 PRIMARY_PROBLEM_CUES: tuple[tuple[PrimaryProblem, tuple[str, ...]], ...] = (
     (
         PrimaryProblem.duplicate_payment,
@@ -248,10 +252,24 @@ PRIMARY_PROBLEM_CUES: tuple[tuple[PrimaryProblem, tuple[str, ...]], ...] = (
         ),
     ),
     (
+        # A request for GhostLedger to pay. These are deliberately broad: an
+        # invoice submitted "for approval" or "for processing" is a payment
+        # request, and phrasing varies widely between senders.
         PrimaryProblem.payment_request,
         (
-            "please pay", "request payment", "initiate payment", "make a payment",
-            "send the funds", "remit payment", "please transfer",
+            "please pay", "please process", "process this invoice", "process the invoice",
+            "process this bill", "request payment", "payment request",
+            "initiate payment", "make a payment", "make payment",
+            "send the funds", "remit payment", "remit the", "please transfer",
+            "for approval", "for payment", "for your approval", "for your review",
+            "awaiting approval", "awaiting payment", "pending approval",
+            "submit for payment", "submit this bill", "submit this invoice",
+            "please review this", "kindly process", "kindly review",
+            "approve this invoice", "approve the invoice", "payment is due",
+            "please arrange payment", "arrange payment", "please settle",
+            "new invoice", "this is a new invoice", "this invoice is new",
+            "not paid yet", "no payment has been", "has not been paid",
+            "have not paid", "we have not paid", "payment has not been made",
         ),
     ),
     (
@@ -261,19 +279,74 @@ PRIMARY_PROBLEM_CUES: tuple[tuple[PrimaryProblem, tuple[str, ...]], ...] = (
             "still shows unpaid", "still says unpaid", "applied to a different account",
             "cannot trace", "not credited", "payment status", "shows an outstanding balance",
             "portal still shows", "reminder saying",
-            # Any document presenting a claimed payment alongside a balance
-            # still due is a reconciliation question.
             "payment reported", "payment received", "amount paid", "paid the invoice",
             "paid this invoice", "paid in full",
         ),
     ),
 )
 
+# Narrower than the reconciliation cue set: these are phrases where the
+# customer is *arguing* that money moved, rather than a neutral status label.
+PAYMENT_DISPUTE_CUES = (
+    "already paid", "have paid", "has paid", "i paid", "we paid",
+    "paid this invoice", "paid the invoice", "paid in full",
+    "still shows unpaid", "still says unpaid", "shows as unpaid",
+    "applied to a different account", "cannot trace", "not credited",
+    "money left my account", "portal still shows", "payment was made",
+    "reminder saying", "dispute", "disputed",
+)
+
+
+# Language that says the customer explicitly does NOT want a payment yet. This
+# protects purely informational submissions from being classified as payment
+# requests, even when the document looks like an invoice.
+# Only explicit instructions NOT to pay belong here. Statements that merely
+# describe the invoice state ("no payment has been made yet") are the customer
+# asking for payment, not refusing it, so they are deliberately excluded.
+PAYMENT_REQUEST_SUPPRESSORS = (
+    "do not process", "do not pay", "please do not pay", "do not initiate",
+    "do not make payment", "do not remit", "not for payment",
+    "for recordkeeping", "for record keeping", "for record-keeping",
+    "for investigation", "for your information", "for reference only",
+    "fyi only", "no payment is due", "no payment due", "nothing to pay",
+)
+
+
+def _has_suppressor(haystack: str) -> bool:
+    """True when the text explicitly says no payment should be processed."""
+
+    return any(phrase in haystack for phrase in PAYMENT_REQUEST_SUPPRESSORS)
+
+
+def is_unpaid_invoice(result: AnalysisResult) -> bool:
+    """True when the document is an invoice with money still outstanding.
+
+    Used as corroboration: payment-request wording only wins when there is
+    actually an amount to pay.
+    """
+
+    financial = result.financial_information
+    if result.document_type not in {DocumentType.invoice, DocumentType.receipt}:
+        return False
+    total = financial.total_amount
+    if total is None or total <= 0:
+        return False
+    paid = financial.amount_paid
+    if paid is None:
+        # No payment recorded against the invoice: still payable.
+        return True
+    return paid < total
+
 
 def infer_primary_problem(
     result: AnalysisResult, source_text: str
 ) -> tuple[PrimaryProblem, bool]:
-    """Return the primary problem and whether it was inferred rather than supplied."""
+    """Return the primary problem and whether it was inferred rather than supplied.
+
+    The model's own answer always wins. Inference only runs when the model
+    supplied no classification at all, and it is deterministic so the same
+    document always routes the same way.
+    """
 
     supplied = result.detected_problem.primary_problem
     if supplied != PrimaryProblem.unknown:
@@ -296,21 +369,64 @@ def infer_primary_problem(
         if part
     ).casefold()
 
-    for problem, cues in PRIMARY_PROBLEM_CUES:
+    # A document that says "do not pay this" or "for record only" must never be
+    # treated as a payment request, whatever else it contains.
+    suppressed = _has_suppressor(haystack)
+
+    # Specific complaints always win over generic dispute wording:
+    # a duplicate or a failed payment is more actionable than "we paid".
+    for problem in (
+        PrimaryProblem.duplicate_payment,
+        PrimaryProblem.duplicate_invoice,
+        PrimaryProblem.payment_failure,
+    ):
+        cues = dict(PRIMARY_PROBLEM_CUES)[problem]
         if any(cue in haystack for cue in cues):
             return problem, True
 
-    # Fall back to the document-level problem type when no wording matched.
+    # A *contested* payment claim ("I already paid", "still shows unpaid")
+    # outranks a request to pay. A neutral label such as "Payment Status:
+    # Unpaid" is not a dispute and must not suppress a payment request.
+    negations = (
+        "not paid", "not yet paid", "have not paid", "haven't paid",
+        "no payment has been made", "never paid", "unpaid yet",
+    )
+    negated = any(phrase in haystack for phrase in negations)
+    if not negated and any(cue in haystack for cue in PAYMENT_DISPUTE_CUES):
+        return PrimaryProblem.bank_reconciliation, True
+
+    for problem, cues in PRIMARY_PROBLEM_CUES:
+        if not any(cue in haystack for cue in cues):
+            continue
+        if problem == PrimaryProblem.payment_request:
+            if suppressed:
+                # The customer asked for no payment; fall through to review
+                # rather than inventing a payment request.
+                continue
+            # A payment request needs something to pay. An invoice with no
+            # outstanding amount is not a request to move money.
+            if not is_unpaid_invoice(result):
+                continue
+        return problem, True
+
+    # --- Fallback on the document-level problem type ----------------------
+    problem_type = result.detected_problem.type
+    if problem_type == ProblemType.unpaid_invoice and not suppressed and is_unpaid_invoice(result):
+        # An unpaid invoice with no counter-evidence is a payment awaiting
+        # approval. But if the text argues about money that moved ("already
+        # paid", "still shows unpaid"), reconciliation wins: the customer is
+        # disputing a payment, not asking for a new one.
+        reconciliation_cues = dict(PRIMARY_PROBLEM_CUES)[PrimaryProblem.bank_reconciliation]
+        if any(cue in haystack for cue in reconciliation_cues):
+            return PrimaryProblem.bank_reconciliation, True
+        return PrimaryProblem.payment_request, True
     mapping = {
         ProblemType.payment_status_discrepancy: PrimaryProblem.bank_reconciliation,
-        ProblemType.unpaid_invoice: PrimaryProblem.bank_reconciliation,
         ProblemType.incorrect_transaction: PrimaryProblem.bank_reconciliation,
         ProblemType.refund_request: PrimaryProblem.bank_reconciliation,
     }
-    if result.detected_problem.type in mapping:
-        return mapping[result.detected_problem.type], True
-    if result.detected_problem.type == ProblemType.none_identified:
-        return PrimaryProblem.unknown, True
+    if problem_type in mapping:
+        return mapping[problem_type], True
     return PrimaryProblem.unknown, True
 
 
@@ -383,6 +499,11 @@ def decide_routing(
     """
 
     primary, inferred = infer_primary_problem(result, source_text)
+    if inferred:
+        # Keep the problem record consistent with the routing decision, so the
+        # API never reports "unknown" in one place and a routed intent in
+        # another.
+        result.detected_problem.primary_problem = primary
     duplicate_amount, duplicate_notes = detect_duplicate_payments(result, source_text, validation)
     if duplicate_amount is not None:
         validation.calculated.potential_duplicate_amount = duplicate_amount

@@ -167,13 +167,46 @@ bank_reconciliation - a payment the customer believes was made is not reflected,
                       was misapplied, or the status is disputed.
 payment_failure     - a payment attempt failed, was declined, or did not go
                       through.
-payment_request     - the document asks that a new payment be made. This always
+payment_request     - the document submits an invoice for GhostLedger to pay,
+                      or asks for approval so a payment can be made. This always
                       needs human approval before anyone acts.
 unknown             - you cannot tell, or no problem is reported.
 
-If a duplicate payment is reported, choose duplicate_payment even though the
-payment status is also wrong. Do not choose bank_reconciliation merely because
-an amount looks inconsistent. Use unknown when unsure rather than guessing.
+### Recognising a payment request
+A document is a payment_request when it presents a NEW payable invoice and asks
+for it to be handled. Read the intent of the wording, not just a keyword. These
+all mean payment_request:
+
+  "Please review this new invoice for approval."
+  "Please process this invoice."
+  "This is a new invoice."
+  "We have not paid this invoice yet."
+  "Please submit this bill for payment approval."
+  "Kindly arrange payment of the outstanding balance."
+  "Invoice attached for your approval."
+  "Amount due: 2,592.00. Payment terms: Net 30."
+
+An unpaid invoice with a positive balance and no complaint about it is normally
+a payment_request even when the document says nothing at all about paying.
+
+### When it is NOT a payment request
+Do NOT choose payment_request when:
+- the customer says the invoice was already paid, misapplied or disputed
+  (that is bank_reconciliation);
+- the customer says it was paid twice or billed twice
+  (duplicate_payment / duplicate_invoice);
+- a payment attempt failed or was declined (payment_failure);
+- the document explicitly asks for no payment, e.g. "do not process this",
+  "for recordkeeping only", "for your information only", "no payment is due";
+- there is no outstanding amount to pay.
+
+### Distinguishing the six intents
+duplicate_payment is chosen over bank_reconciliation whenever the customer
+complains about paying more than once, even though the payment status is also
+wrong. Do not choose bank_reconciliation merely because an amount looks
+inconsistent. An invoice that is simply new and unpaid is payment_request, not
+bank_reconciliation and not unknown. Use unknown only when the document truly
+cannot be understood.
 
 Also report reported_payment_count: how many separate payments the document
 shows for this invoice (an integer, or null if unknown).

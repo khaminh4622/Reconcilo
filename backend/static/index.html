@@ -8,9 +8,12 @@
     :root { --ink:#101d32; --muted:#61708a; --line:#dce4ef; --paper:#fff; --wash:#f4f7fb; --blue:#1463dc; --green:#13755d; --amber:#b25d00; --red:#b93d4a; }
     * { box-sizing:border-box; } body { margin:0; color:var(--ink); font:14px/1.45 Inter,ui-sans-serif,system-ui,sans-serif; background:var(--wash); }
     header { background:#101d32; color:#f6f8fc; padding:18px max(24px,calc((100vw - 1180px)/2)); display:flex; justify-content:space-between; align-items:center; }
-    .brand { font-size:20px; font-weight:750; letter-spacing:-.4px; } .brand span { color:#68a6ff; }.pill { border:1px solid #466080; border-radius:999px; padding:5px 10px; color:#c7d7ef; font-size:12px; }
+    .brand { font-size:20px; font-weight:750; letter-spacing:-.4px; } .brand span { color:#68a6ff; }.nav { display:flex; gap:6px; margin-left:auto; margin-right:14px; }
+    .navbtn { background:transparent; border:1px solid #466080; color:#c7d7ef; border-radius:999px; padding:6px 14px; font-size:12.5px; cursor:pointer; font-weight:600; }
+    .navbtn.active { background:#2f6fdd; border-color:#2f6fdd; color:#fff; }
+.pill { border:1px solid #466080; border-radius:999px; padding:5px 10px; color:#c7d7ef; font-size:12px; }
     main { max-width:1180px; margin:0 auto; padding:28px 24px 56px; } h1 { margin:0; font-size:28px; letter-spacing:-.8px; }.intro { color:var(--muted); max-width:780px; margin:8px 0 24px; }
-    .grid { display:grid; grid-template-columns:340px 1fr; gap:20px; }.card { background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:19px; box-shadow:0 4px 18px #18345b0a; }
+    .grid { display:grid; grid-template-columns:340px 320px minmax(0,1fr); gap:20px; align-items:start; }.card { background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:19px; box-shadow:0 4px 18px #18345b0a; }
     h2 { margin:0 0 14px; font-size:16px; } h3 { margin:18px 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); }.section { border-top:1px solid var(--line); margin-top:18px; padding-top:3px; }
     label { display:block; color:var(--muted); font-size:12px; font-weight:700; margin:10px 0 5px; } input { width:100%; border:1px solid var(--line); border-radius:8px; padding:10px; font:inherit; color:var(--ink); background:#fff; }
     .drop { border:1px dashed #9cb5d6; background:#f8fbff; padding:14px; border-radius:9px; color:var(--muted); }.notice { color:var(--muted); font-size:12px; margin:10px 0 0; }
@@ -42,6 +45,7 @@
     .evidence { border-left:3px solid #68a6ff; padding:8px 10px; margin-top:8px; background:#f8fbff; color:#36506f; white-space:pre-wrap; }.evidence em { display:block; color:var(--muted); font-size:12px; margin-top:3px; font-style:normal; }
     .muted { color:var(--muted); }
     /* Workflow visualisation */
+    .node .ph { display:block; font-size:9px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); margin-top:1px; }
     .flow { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:10px 0 4px; }
     .node { display:flex; flex-direction:column; gap:3px; padding:9px 12px; border-radius:10px; border:1.5px solid var(--line); background:#fff; min-width:118px; }
     .node .nm { font-weight:700; font-size:12px; }
@@ -67,15 +71,64 @@
     .report .sum { color:#43566e; font-size:13px; margin-bottom:6px; }
     .report .fnd { font-size:12px; margin:4px 0; display:flex; gap:7px; align-items:flex-start; }
     .audit-line { font:12px/1.6 ui-monospace,Menlo,monospace; color:#43566e; border-bottom:1px dashed #e4eaf2; padding:3px 0; }
+    .a1-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-bottom:12px; }
+    .a1-score { font:700 26px/1 ui-monospace,Menlo,monospace; }
+    .a1-cand { border:1px solid var(--line); border-radius:9px; padding:10px 12px; margin-bottom:8px; background:#fbfcfe; }
+    .a1-cand .top { display:flex; justify-content:space-between; gap:10px; align-items:baseline; }
+    .a1-cand .score { font:700 13px ui-monospace,Menlo,monospace; }
+    .a1-cand.exact { border-color:#c84652; background:#fff5f6; }
+    .a1-cand.high { border-color:#d18b16; background:#fffbf2; }
+    .a1-sig { font-size:11.5px; color:#43566e; margin:2px 0; }
+    .a1-sig .yes { color:#1f9d78; font-weight:700; } .a1-sig .no { color:#9aa7b8; }
+    .a1-pay { font-size:12px; margin:3px 0; }
+    .a4-head { display:flex; align-items:center; gap:9px; margin-bottom:9px; }
+    .a4-code { font:600 11px ui-monospace,Menlo,monospace; background:#eef2f7; border-radius:5px; padding:2px 7px; }
+    .a4-block { border:1px solid var(--line); border-radius:9px; padding:10px 12px; margin-top:9px; background:#fcfdff; }
+    .a4-block h4 { margin:0 0 6px; font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); }
+    .a4-approve { border-color:#f0dcb4; background:#fffdf6; }
+    .a4-approve.granted { border-color:#bfe6d4; background:#f4fdf9; }
+    .a4-step { display:flex; gap:8px; align-items:baseline; font-size:12px; margin:4px 0; }
+    .a4-step .dot { width:7px; height:7px; border-radius:50%; background:#c9d6e6; flex:none; margin-top:4px; }
+    .a4-step.done .dot { background:#1f9d78; }
+    .a4-step.warn .dot { background:#d9962a; }
+    .a4-step.fail .dot { background:#d64545; }
+    .a4-kv { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px 16px; font-size:12px; }
+    .a4-kv strong { display:block; font-size:10px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); font-weight:600; }
+    .a4-report { border-color:#c9d9f0; background:#f7faff; }
+    .a4-report-tag { font:600 10px ui-monospace,Menlo,monospace; letter-spacing:.05em;
+      text-transform:uppercase; color:#2f6fdd; }
+    .a4-report > div:not(.a4-report-tag):not(.a1-pay) { font-size:12.5px; line-height:1.5; }
+    .a4-report .a4-claim { border-left:3px solid #d9962a; padding-left:9px; }
+    .a4-report .a4-fact { border-left:3px solid #1f9d78; padding-left:9px; }
+    .a4-legend { display:flex; gap:14px; flex-wrap:wrap; font-size:10.5px; color:var(--muted); margin:8px 0 2px; }
+    .a4-legend em { display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px; vertical-align:middle; }
+    .a4-legend .lg-claim { background:#d9962a; }
+    .a4-legend .lg-fact { background:#1f9d78; }
+    .a4-legend .lg-unknown { background:#c9d6e6; }
+    .a4-drawer { max-height:220px; overflow:auto; font:11.5px ui-monospace,Menlo,monospace; background:#f8fafc; border-radius:6px; padding:8px; white-space:pre-wrap; }
+
+    .sim { background:#fff7e9; border:1px solid #f0dcb4; color:#8a4a00; border-radius:8px; padding:8px 11px; font-size:12.5px; font-weight:600; margin-bottom:10px; }
+    .receipt { border:1.5px dashed #1f9d78; border-radius:10px; padding:14px; background:#f4fdf9; margin-top:10px; }
+    .receipt .head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px; }
+    .receipt .amt { font:700 22px ui-monospace,Menlo,monospace; color:#0f5c49; }
+    .receipt .ref { font:12px ui-monospace,Menlo,monospace; color:#36506f; }
+    .receipt ul { margin:8px 0 0; padding-left:18px; font-size:12px; color:#36506f; }
+    .bank-table { width:100%; border-collapse:collapse; font-size:11.5px; margin-top:9px; }
+    .bank-table th { text-align:left; font-size:10px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); border-bottom:1px solid var(--line); padding:4px 5px; }
+    .bank-table td { padding:4px 5px; border-bottom:1px solid #eef2f7; vertical-align:top; }
+    .bank-table td.num { text-align:right; font-family:ui-monospace,Menlo,monospace; white-space:nowrap; }
+    .scroll { overflow-x:auto; }
     .approve-box { border:1px solid #f0dcb4; background:#fffbf2; border-radius:10px; padding:13px; margin-top:10px; }
     .approve-box input { margin-bottom:8px; }
     .row2 { display:flex; gap:8px; } .row2 button { margin-top:0; }
+    @media (max-width:1200px) { .grid { grid-template-columns:340px minmax(0,1fr); } }
     @media (max-width:800px) { .grid,.summary,.facts { grid-template-columns:1fr; } .row2 { flex-direction:column; } }
   </style>
 </head>
 <body>
-  <header><div class="brand">Ghost<span>Ledger</span> / Multi-Agent</div><div class="pill" id="engine">Checking model…</div></header>
-  <main>
+  <header><div class="brand">Ghost<span>Ledger</span> / Multi-Agent</div>
+    <nav class="nav"><button id="navWorkflow" class="navbtn active" type="button">Workflow</button><button id="navBank" class="navbtn" type="button">Mock Bank Ledger</button><button id="navDev" class="navbtn" type="button" title="Developer tools">&hellip;</button></nav><div class="pill" id="engine">Checking model…</div></header>
+  <main id="pageWorkflow">
     <h1>Autonomous finance workflow</h1>
     <p class="intro">Agent 3 reads the document, validates it and routes the case. The orchestrator then dispatches the right specialist — and nothing is paid without human approval.</p>
     <div class="grid">
@@ -92,6 +145,20 @@
           <h3>Recent cases</h3>
           <div id="cases"><span class="muted">No cases yet.</span></div>
         </div>
+      </section>
+      <section class="card">
+        <h2>2. Mock Bank Ledger</h2>
+        <div class="sim">SIMULATED &mdash; NO REAL MONEY. Bank transactions are created automatically by GhostLedger's payment simulator. Read-only: nothing here can be edited, and no statement upload is needed.</div>
+        <div class="summary" style="grid-template-columns:repeat(2,1fr)">
+          <div class="metric"><label>Transactions</label><div id="panelBankCount">—</div></div>
+          <div class="metric"><label>Settled balance</label><div id="panelBankBalance">—</div></div>
+        </div>
+        <div class="row2" style="display:flex;gap:8px;margin-top:10px;align-items:flex-end">
+          <div style="flex:1"><label for="panelBankSearch">Search</label><input id="panelBankSearch" type="text" placeholder="Invoice, reference, customer"></div>
+          <div><button id="panelBankRefresh" type="button">Refresh</button></div>
+        </div>
+        <div id="panelBankTable" style="margin-top:10px"></div>
+        <p class="notice" style="margin-top:8px">Updated automatically after each approved payment. <a href="#" id="panelBankOpenFull">Open the full ledger</a>.</p>
       </section>
       <section class="card">
         <div id="error" class="error hidden"></div>
@@ -113,17 +180,73 @@
           <div class="section"><h3>Recommended next agent</h3><div id="routing"></div></div>
           <div id="approvalBox"></div>
           <div class="section"><h3>Outcome</h3><div id="outcome"></div></div>
+          <div class="section" id="a1Section" style="display:none">
+            <h3>Agent 1 &middot; Duplicate investigation</h3>
+            <div id="a1Panel"></div>
+          </div>
+          <div class="section" id="a5Section" style="display:none">
+            <h3>Agent 5 &middot; Payment execution</h3>
+            <div id="a5Panel"></div>
+          </div>
           <div class="section"><h3>Agent activity</h3><div id="activity"></div></div>
           <div class="section"><h3>Customer information</h3><div id="customer" class="facts"></div></div>
           <div class="section"><h3>Vendor information</h3><div id="vendor" class="facts"></div></div>
           <div class="section"><h3>Financial information</h3><div id="financial" class="facts"></div></div>
           <div class="section"><h3>Detected financial problem</h3><div id="problem"></div></div>
+          <div class="section" id="a4Section" style="display:none">
+            <h3>Agent 4 &middot; Payment exception</h3>
+            <div id="a4Exception"></div>
+            <div id="a4Approval"></div>
+            <div id="a4Timeline"></div>
+            <div id="a4Record"></div>
+          </div>
+          <div class="section" id="a2Section" style="display:none">
+            <h3>Agent 2 &middot; Bank reconciliation</h3>
+            <div id="a2Panel"></div>
+          </div>
           <div class="section"><h3>Validation findings</h3><div id="validation"></div></div>
           <div class="section"><h3>Audit trail</h3><div id="audit"></div></div>
           <div class="section"><h3>Case JSON</h3><pre id="json"></pre></div>
         </div>
       </section>
     </div>
+
+  </main>
+  <main id="pageBank" class="hidden">
+    <h1>Mock Bank Ledger</h1>
+    <div class="sim" style="font-size:13px">SIMULATED &mdash; NO REAL MONEY. Every transaction on this page was created by GhostLedger's fictional payment simulator. No real bank account exists.</div>
+    <div class="summary">
+      <div class="metric"><label>Transactions</label><div id="bankCount">&mdash;</div></div>
+      <div class="metric"><label>Settled balance</label><div id="bankBalance">&mdash;</div></div>
+      <div class="metric"><label>Simulated</label><div>YES</div></div>
+    </div>
+    <section class="card" style="margin-top:16px">
+      <div class="row2" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div style="flex:1;min-width:180px"><label for="bankSearch">Search</label><input id="bankSearch" type="text" placeholder="Invoice, reference, customer, vendor"></div>
+        <div><label for="bankStatus">Status</label>
+          <select id="bankStatus">
+            <option value="">All statuses</option>
+            <option>SETTLED</option><option>PENDING</option><option>PARTIAL</option><option>FAILED</option>
+          </select></div>
+        <div><button id="bankRefresh" type="button">Refresh</button></div>
+      </div>
+      <div id="bankLedgerTable" style="margin-top:12px"></div>
+    </section>
+    <section class="card" id="devCard" style="margin-top:16px;display:none">
+      <h2>Developer &middot; Failure simulator</h2>
+      <div class="sim">DEVELOPER TOOL (local only) &mdash; creates synthetic failed payments for Agent 4 testing. Simulated only; no money moves and the settled balance never changes.</div>
+      <div class="row2" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:10px">
+        <div style="flex:1;min-width:160px"><label for="devInvoice">Invoice number</label><input id="devInvoice" type="text" value="INV-SIM-0001"></div>
+        <div style="width:120px"><label for="devAmount">Amount</label><input id="devAmount" type="text" value="1250.00"></div>
+        <div><label for="devCode">Failure reason</label><select id="devCode"><option>INSUFFICIENT_FUNDS</option><option>INVALID_ACCOUNT</option><option>PAYMENT_REJECTED</option><option>BANK_TIMEOUT</option></select></div>
+        <div><button id="devSimulate" type="button">Simulate failure</button></div>
+      </div>
+      <div id="devResult" style="margin-top:10px"></div>
+    </section>
+    <section class="card" id="bankDetailCard" style="margin-top:16px;display:none">
+      <h2>Settlement history</h2>
+      <div id="bankDetail"></div>
+    </section>
   </main>
   <script>
     const byId = id => document.getElementById(id);
@@ -157,9 +280,13 @@
     function renderFlow(caseData) {
       const runs = (caseData.agent_runs || []).slice().sort((a, b) => a.order - b.order).filter(r => r.agent !== "orchestrator");
       if (!runs.length) { byId("flow").innerHTML = ""; return; }
+      const PHASE = { initiation: "initiate pay", confirmation: "confirm result" };
       const nodes = runs.map(r => {
         const short = AGENT_SHORT[r.agent] || r.agent;
-        return `<div class="node ${esc(r.status)}"><span class="nm">${esc(short)}</span><span class="st">${esc(r.status.replace("_"," "))}</span></div>`;
+        // Agent 5 now appears twice: initiating the payment before Agent 2 and
+        // confirming the result after it. Label which step each node is.
+        const phase = r.phase && PHASE[r.phase] ? `<span class="ph">${esc(PHASE[r.phase])}</span>` : "";
+        return `<div class="node ${esc(r.status)}"><span class="nm">${esc(short)}</span>${phase}<span class="st">${esc(r.status.replace("_"," "))}</span></div>`;
       });
       byId("flow").innerHTML = nodes.join('<span class="arrow">&#8594;</span>');
       const done = runs.filter(r => r.status === "completed").length;
@@ -213,6 +340,841 @@
       } catch (e) { showProblem("Action failed.", [e.message]); }
     }
 
+    const A1_TONE = {
+      NO_DUPLICATE_FOUND: "passed", POSSIBLE_DUPLICATE: "unverified",
+      CONFIRMED_DUPLICATE_INVOICE: "failed", CONFIRMED_DUPLICATE_PAYMENT: "failed",
+      SUSPECTED_DUPLICATE_PAYMENT: "failed", REQUIRES_BANK_VERIFICATION: "unverified",
+      REQUIRES_HUMAN_REVIEW: "unverified", INSUFFICIENT_INFORMATION: "unverified"
+    };
+
+    const PREV_LABEL = {
+      ALREADY_PAID: "ALREADY PAID",
+      UNPAID_ELIGIBLE_FOR_APPROVAL: "UNPAID \u2014 ELIGIBLE FOR APPROVAL",
+      PAYMENT_PENDING: "PAYMENT PENDING",
+      PAYMENT_FAILED: "PAYMENT FAILED",
+      PAYMENT_STATUS_UNKNOWN: "PAYMENT STATUS UNKNOWN",
+      DUPLICATE_PAYMENT_DETECTED: "DUPLICATE PAYMENT DETECTED"
+    };
+    const PREV_TONE = {
+      ALREADY_PAID: "failed", UNPAID_ELIGIBLE_FOR_APPROVAL: "passed",
+      PAYMENT_PENDING: "unverified", PAYMENT_FAILED: "failed",
+      PAYMENT_STATUS_UNKNOWN: "unverified", DUPLICATE_PAYMENT_DETECTED: "failed"
+    };
+
+    function prevStatusHtml(inv) {
+      const status = inv.previous_payment_status;
+      if (!status) return "";
+      const tone = PREV_TONE[status] || "unverified";
+      const original = inv.original_invoice || {};
+      const ref = inv.original_payment_reference;
+      return `
+        <h3 style="margin-top:14px">Previous invoice payment status</h3>
+        <div class="check ${tone}">
+          <div class="head"><span class="status ${tone}">${esc(PREV_LABEL[status] || status)}</span></div>
+          <p>${esc(inv.decision_reason || "")}</p>
+          <div class="nums">
+            ${original.invoice_number ? `original invoice ${esc(original.invoice_number)}` : ""}
+            ${original.amount ? ` \u00b7 ${esc(original.amount)} ${esc(original.currency || "")}` : ""}
+            ${ref ? ` \u00b7 payment reference ${esc(ref)}` : ""}
+            ${inv.remaining_balance ? ` \u00b7 remaining ${esc(inv.remaining_balance)} ${esc(inv.currency || "")}` : ""}
+          </div>
+        </div>
+        <div class="a1-sig" style="margin-top:6px">
+          ${inv.obligation_id ? `<div>Payable obligation <b>${esc(inv.obligation_id.slice(0,8))}</b> \u2014 ${inv.obligation_reused ? "reused; no second obligation was created" : "newly created for this invoice"}</div>` : ""}
+          ${inv.submission_is_duplicate ? `<div>Submission: <b>duplicate</b> (${esc(inv.prior_submission_count || 0)} earlier submission(s) of this invoice)</div>` : `<div>Submission: first for this invoice</div>`}
+        </div>`;
+    }
+
+    // ------------------------------------------------------------------
+    // Mock Bank Ledger page (simulated transactions created automatically)
+    // ------------------------------------------------------------------
+    const BANK_TONE = { SETTLED: "passed", PARTIAL: "unverified", PENDING: "unverified", FAILED: "failed" };
+
+    function showPage(which) {
+      const workflow = byId("pageWorkflow");
+      const bank = byId("pageBank");
+      if (!workflow || !bank) return;
+      const isBank = which === "bank";
+      workflow.classList.toggle("hidden", isBank);
+      bank.classList.toggle("hidden", !isBank);
+      const navW = byId("navWorkflow"), navB = byId("navBank");
+      if (navW) navW.classList.toggle("active", !isBank);
+      if (navB) navB.classList.toggle("active", isBank);
+      if (isBank) loadBankLedger();
+    }
+
+    async function loadBankLedger() {
+      const target = byId("bankLedgerTable");
+      if (!target) return;
+      const search = (byId("bankSearch") && byId("bankSearch").value || "").trim();
+      const status = (byId("bankStatus") && byId("bankStatus").value) || "";
+      const params = new URLSearchParams();
+      if (search) params.set("search", search);
+      if (status) params.set("status", status);
+      target.innerHTML = `<p class="muted">Loading simulated ledger…</p>`;
+      try {
+        const response = await fetch(`/bank/ledger?${params.toString()}`);
+        if (!response.ok) { target.innerHTML = `<p class="notice" style="color:#9c2a2a">Could not load the ledger.</p>`; return; }
+        renderBankLedger(await response.json());
+      } catch (error) {
+        target.innerHTML = `<p class="notice" style="color:#9c2a2a">${esc(error.message)}</p>`;
+      }
+    }
+
+    function renderBankLedger(payload) {
+      const rows = payload.transactions || [];
+      byId("bankCount").textContent = String(payload.count ?? rows.length);
+      const balances = payload.balances || {};
+      const keys = Object.keys(balances);
+      byId("bankBalance").textContent = keys.length
+        ? keys.map(k => `${balances[k]} ${k}`).join(" · ")
+        : "0.00";
+
+      const target = byId("bankLedgerTable");
+      if (!rows.length) {
+        target.innerHTML = `<p class="muted">No simulated bank transactions yet. Process an approved payment and it will appear here automatically.</p>`;
+        return;
+      }
+      target.innerHTML = `
+        <div class="scroll"><table class="bank-table">
+          <thead><tr>
+            <th>Transaction ID</th><th>Invoice</th><th>Customer</th><th>Reference</th>
+            <th class="num">Expected</th><th class="num">Received</th><th>Currency</th>
+            <th>Status</th><th>Date</th>
+          </tr></thead>
+          <tbody>${rows.map(r => `
+            <tr class="bankrow" data-entry="${esc(r.entry_id)}" style="cursor:pointer">
+              <td><code>${esc(r.entry_id)}</code>${r.is_anomaly ? ' <span class="pill" style="font-size:9px">ANOMALY</span>' : ""}</td>
+              <td>${esc(r.invoice_number || "")}</td>
+              <td>${esc(r.customer_name || "")}</td>
+              <td><code>${esc(r.payment_reference || "")}</code></td>
+              <td class="num">${esc(r.expected_amount || r.amount || "")}</td>
+              <td class="num">${esc(r.received_amount || "—")}</td>
+              <td>${esc(r.currency || "")}</td>
+              <td>${status(BANK_TONE[(r.status || "").toUpperCase()] || "unverified")} ${esc(r.status || "")}</td>
+              <td>${esc(r.transaction_date || r.value_date || "")}</td>
+            </tr>`).join("")}</tbody>
+        </table></div>
+        <p class="notice" style="margin-top:8px">Click a transaction to see its full settlement history.</p>`;
+      target.querySelectorAll(".bankrow").forEach(row => {
+        row.addEventListener("click", () => loadBankDetail(row.dataset.entry));
+      });
+    }
+
+    async function loadBankDetail(entryId) {
+      const card = byId("bankDetailCard");
+      const target = byId("bankDetail");
+      if (!card || !target) return;
+      card.style.display = "";
+      target.innerHTML = `<p class="muted">Loading settlement history…</p>`;
+      try {
+        const response = await fetch(`/bank/ledger/${encodeURIComponent(entryId)}`);
+        if (!response.ok) { target.innerHTML = `<p class="notice" style="color:#9c2a2a">Transaction not found.</p>`; return; }
+        renderBankDetail(await response.json());
+      } catch (error) {
+        target.innerHTML = `<p class="notice" style="color:#9c2a2a">${esc(error.message)}</p>`;
+      }
+    }
+
+    function renderBankDetail(payload) {
+      const t = payload.transaction || {};
+      const history = payload.settlement_history || [];
+      byId("bankDetail").innerHTML = `
+        <div class="sim">SIMULATED &mdash; NO REAL MONEY</div>
+        <div class="facts">
+          ${[
+            ["Transaction ID", t.entry_id],
+            ["Invoice", t.invoice_number],
+            ["Customer", t.customer_name],
+            ["Vendor", t.vendor_name],
+            ["Payment reference", t.payment_reference],
+            ["Expected amount", t.expected_amount],
+            ["Received amount", t.received_amount || "—"],
+            ["Currency", t.currency],
+            ["Sender account", t.sender_account],
+            ["Receiver account", t.receiver_account],
+            ["Status", t.status],
+            ["Scenario", t.scenario],
+            ["Transaction date", t.transaction_date || t.value_date],
+            ["Settlement date", t.settlement_date || "—"],
+            ["Audit timestamp", t.audit_timestamp],
+          ].map(([k, v]) => `<div class="fact"><strong>${esc(k)}</strong>${esc(v ?? "—")}</div>`).join("")}
+        </div>
+        <h3 style="margin-top:14px">Settlement history (${history.length})</h3>
+        <div class="scroll"><table class="bank-table">
+          <thead><tr><th>Transaction ID</th><th>Status</th><th class="num">Amount</th><th>Settled</th><th>Date</th></tr></thead>
+          <tbody>${history.map(h => `
+            <tr><td><code>${esc(h.entry_id)}</code></td>
+                <td>${esc(h.status)}</td>
+                <td class="num">${esc(h.received_amount || "—")}</td>
+                <td>${esc(h.settlement_date || "—")}</td>
+                <td>${esc(h.transaction_date || h.value_date || "")}</td></tr>`).join("")}</tbody>
+        </table></div>
+        ${history.length > 1 ? `<p class="notice" style="color:#9c3a1a">More than one settlement exists for this reference. That is a duplicate settlement anomaly and needs human review.</p>` : ""}`;
+    }
+
+    // ---- Developer failure simulator ----------------------------------
+    async function simulateFailure() {
+      const out = byId("devResult");
+      const payload = {
+        invoice_number: (byId("devInvoice") && byId("devInvoice").value || "").trim(),
+        amount: (byId("devAmount") && byId("devAmount").value || "").trim(),
+        failure_code: byId("devCode") && byId("devCode").value,
+      };
+      out.innerHTML = `<p class="muted">Creating simulated failure…</p>`;
+      try {
+        const response = await fetch("/developer/simulate-failure", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) { out.innerHTML = `<p class="notice" style="color:#9c2a2a">${esc(body.detail || "Failed.")}</p>`; return; }
+        const bal = body.settled_balance || {};
+        const balText = Object.keys(bal).length ? Object.entries(bal).map(([k, v]) => `${v} ${k}`).join(" · ") : "0.00";
+        out.innerHTML = `
+          <div class="a1-pay">${status(body.created ? "passed" : "unverified")}
+            <b>${esc(body.failure_code)}</b> ${body.already_existed ? "(already simulated)" : "created"}
+            &middot; <code>${esc(body.payment_reference || "")}</code></div>
+          <div class="a1-pay">${status("passed")} Settled balance unchanged: <b>${esc(balText)}</b></div>
+          <p class="notice">Upload a PAYMENT_FAILURE PDF for invoice ${esc(body.invoice_number)} to see Agent 4 investigate it.</p>`;
+        loadBankLedger();
+      } catch (error) {
+        out.innerHTML = `<p class="notice" style="color:#9c2a2a">${esc(error.message)}</p>`;
+      }
+    }
+
+    function initDeveloperPanel() {
+      const nav = byId("navDev");
+      const card = byId("devCard");
+      if (nav && card) nav.addEventListener("click", () => {
+        const shown = card.style.display !== "none";
+        card.style.display = shown ? "none" : "";
+        if (!shown) card.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      const btn = byId("devSimulate");
+      if (btn) btn.addEventListener("click", simulateFailure);
+    }
+
+    function initBankLedgerPage() {
+      const navW = byId("navWorkflow"), navB = byId("navBank");
+      if (navW) navW.addEventListener("click", () => showPage("workflow"));
+      if (navB) navB.addEventListener("click", () => showPage("bank"));
+      const refresh = byId("bankRefresh");
+      if (refresh) refresh.addEventListener("click", loadBankLedger);
+      const search = byId("bankSearch");
+      if (search) search.addEventListener("input", () => {
+        clearTimeout(search._t);
+        search._t = setTimeout(loadBankLedger, 250);
+      });
+      const sel = byId("bankStatus");
+      if (sel) sel.addEventListener("change", loadBankLedger);
+    }
+
+    // ------------------------------------------------------------------
+    // Mock Bank Ledger page (simulated transactions created automatically)
+    // ------------------------------------------------------------------
+
+    function showPage(which) {
+      const workflow = byId("pageWorkflow");
+      const bank = byId("pageBank");
+      if (!workflow || !bank) return;
+      const isBank = which === "bank";
+      workflow.classList.toggle("hidden", isBank);
+      bank.classList.toggle("hidden", !isBank);
+      const navW = byId("navWorkflow"), navB = byId("navBank");
+      if (navW) navW.classList.toggle("active", !isBank);
+      if (navB) navB.classList.toggle("active", isBank);
+      if (isBank) loadBankLedger();
+    }
+
+    async function loadBankLedger() {
+      const target = byId("bankLedgerTable");
+      if (!target) return;
+      const search = (byId("bankSearch") && byId("bankSearch").value || "").trim();
+      const status = (byId("bankStatus") && byId("bankStatus").value) || "";
+      const params = new URLSearchParams();
+      if (search) params.set("search", search);
+      if (status) params.set("status", status);
+      target.innerHTML = `<p class="muted">Loading simulated ledger…</p>`;
+      try {
+        const response = await fetch(`/bank/ledger?${params.toString()}`);
+        if (!response.ok) { target.innerHTML = `<p class="notice" style="color:#9c2a2a">Could not load the ledger.</p>`; return; }
+        renderBankLedger(await response.json());
+      } catch (error) {
+        target.innerHTML = `<p class="notice" style="color:#9c2a2a">${esc(error.message)}</p>`;
+      }
+    }
+
+    function renderBankLedger(payload) {
+      const rows = payload.transactions || [];
+      byId("bankCount").textContent = String(payload.count ?? rows.length);
+      const balances = payload.balances || {};
+      const keys = Object.keys(balances);
+      byId("bankBalance").textContent = keys.length
+        ? keys.map(k => `${balances[k]} ${k}`).join(" · ")
+        : "0.00";
+
+      const target = byId("bankLedgerTable");
+      if (!rows.length) {
+        target.innerHTML = `<p class="muted">No simulated bank transactions yet. Process an approved payment and it will appear here automatically.</p>`;
+        return;
+      }
+      target.innerHTML = `
+        <div class="scroll"><table class="bank-table">
+          <thead><tr>
+            <th>Transaction ID</th><th>Invoice</th><th>Customer</th><th>Reference</th>
+            <th class="num">Expected</th><th class="num">Received</th><th>Currency</th>
+            <th>Status</th><th>Date</th>
+          </tr></thead>
+          <tbody>${rows.map(r => `
+            <tr class="bankrow" data-entry="${esc(r.entry_id)}" style="cursor:pointer">
+              <td><code>${esc(r.entry_id)}</code>${r.is_anomaly ? ' <span class="pill" style="font-size:9px">ANOMALY</span>' : ""}</td>
+              <td>${esc(r.invoice_number || "")}</td>
+              <td>${esc(r.customer_name || "")}</td>
+              <td><code>${esc(r.payment_reference || "")}</code></td>
+              <td class="num">${esc(r.expected_amount || r.amount || "")}</td>
+              <td class="num">${esc(r.received_amount || "—")}</td>
+              <td>${esc(r.currency || "")}</td>
+              <td>${status(BANK_TONE[(r.status || "").toUpperCase()] || "unverified")} ${esc(r.status || "")}</td>
+              <td>${esc(r.transaction_date || r.value_date || "")}</td>
+            </tr>`).join("")}</tbody>
+        </table></div>
+        <p class="notice" style="margin-top:8px">Click a transaction to see its full settlement history.</p>`;
+      target.querySelectorAll(".bankrow").forEach(row => {
+        row.addEventListener("click", () => loadBankDetail(row.dataset.entry));
+      });
+    }
+
+    async function loadBankDetail(entryId) {
+      const card = byId("bankDetailCard");
+      const target = byId("bankDetail");
+      if (!card || !target) return;
+      card.style.display = "";
+      target.innerHTML = `<p class="muted">Loading settlement history…</p>`;
+      try {
+        const response = await fetch(`/bank/ledger/${encodeURIComponent(entryId)}`);
+        if (!response.ok) { target.innerHTML = `<p class="notice" style="color:#9c2a2a">Transaction not found.</p>`; return; }
+        renderBankDetail(await response.json());
+      } catch (error) {
+        target.innerHTML = `<p class="notice" style="color:#9c2a2a">${esc(error.message)}</p>`;
+      }
+    }
+
+    function renderBankDetail(payload) {
+      const t = payload.transaction || {};
+      const history = payload.settlement_history || [];
+      byId("bankDetail").innerHTML = `
+        <div class="sim">SIMULATED &mdash; NO REAL MONEY</div>
+        <div class="facts">
+          ${[
+            ["Transaction ID", t.entry_id],
+            ["Invoice", t.invoice_number],
+            ["Customer", t.customer_name],
+            ["Vendor", t.vendor_name],
+            ["Payment reference", t.payment_reference],
+            ["Expected amount", t.expected_amount],
+            ["Received amount", t.received_amount || "—"],
+            ["Currency", t.currency],
+            ["Sender account", t.sender_account],
+            ["Receiver account", t.receiver_account],
+            ["Status", t.status],
+            ["Scenario", t.scenario],
+            ["Transaction date", t.transaction_date || t.value_date],
+            ["Settlement date", t.settlement_date || "—"],
+            ["Audit timestamp", t.audit_timestamp],
+          ].map(([k, v]) => `<div class="fact"><strong>${esc(k)}</strong>${esc(v ?? "—")}</div>`).join("")}
+        </div>
+        <h3 style="margin-top:14px">Settlement history (${history.length})</h3>
+        <div class="scroll"><table class="bank-table">
+          <thead><tr><th>Transaction ID</th><th>Status</th><th class="num">Amount</th><th>Settled</th><th>Date</th></tr></thead>
+          <tbody>${history.map(h => `
+            <tr><td><code>${esc(h.entry_id)}</code></td>
+                <td>${esc(h.status)}</td>
+                <td class="num">${esc(h.received_amount || "—")}</td>
+                <td>${esc(h.settlement_date || "—")}</td>
+                <td>${esc(h.transaction_date || h.value_date || "")}</td></tr>`).join("")}</tbody>
+        </table></div>
+        ${history.length > 1 ? `<p class="notice" style="color:#9c3a1a">More than one settlement exists for this reference. That is a duplicate settlement anomaly and needs human review.</p>` : ""}`;
+    }
+
+    function initBankLedgerPage() {
+      const navW = byId("navWorkflow"), navB = byId("navBank");
+      if (navW) navW.addEventListener("click", () => showPage("workflow"));
+      if (navB) navB.addEventListener("click", () => showPage("bank"));
+      const refresh = byId("bankRefresh");
+      if (refresh) refresh.addEventListener("click", loadBankLedger);
+      const search = byId("bankSearch");
+      if (search) search.addEventListener("input", () => {
+        clearTimeout(search._t);
+        search._t = setTimeout(loadBankLedger, 250);
+      });
+      const sel = byId("bankStatus");
+      if (sel) sel.addEventListener("change", loadBankLedger);
+    }
+
+    // ------------------------------------------------------------------
+    // Read-only Mock Bank Ledger panel (customer view).
+    //
+    // Bank evidence is produced automatically by the payment simulator, so a
+    // customer never uploads a statement and cannot edit any bank record.
+    // ------------------------------------------------------------------
+    async function loadReadonlyLedger() {
+      const table = byId("panelBankTable");
+      if (!table) return;
+      const search = (byId("panelBankSearch") && byId("panelBankSearch").value || "").trim();
+      const params = new URLSearchParams();
+      if (search) params.set("search", search);
+      try {
+        const response = await fetch(`/bank/ledger?${params.toString()}`);
+        if (!response.ok) { table.innerHTML = `<p class="notice">Ledger unavailable.</p>`; return; }
+        const payload = await response.json();
+        renderReadonlyLedger(payload);
+      } catch (error) {
+        table.innerHTML = `<p class="notice">${esc(error.message)}</p>`;
+      }
+    }
+
+    function renderReadonlyLedger(payload) {
+      const rows = payload.transactions || [];
+      const count = byId("panelBankCount"), balance = byId("panelBankBalance");
+      if (count) count.textContent = String(payload.count ?? rows.length);
+      if (balance) {
+        const b = payload.balances || {};
+        const keys = Object.keys(b);
+        balance.textContent = keys.length ? keys.map(k => `${b[k]} ${k}`).join(" · ") : "0.00";
+      }
+      const table = byId("panelBankTable");
+      if (!table) return;
+      if (!rows.length) {
+        table.innerHTML = `<p class="muted">No simulated bank transactions yet. They appear automatically after an approved payment.</p>`;
+        return;
+      }
+      table.innerHTML = `
+        <div class="scroll"><table class="bank-table">
+          <thead><tr>
+            <th>Invoice</th><th>Reference</th><th class="num">Expected</th>
+            <th class="num">Received</th><th>Currency</th><th>Status</th><th>Date</th>
+          </tr></thead>
+          <tbody>${rows.slice(0, 8).map(r => `
+            <tr>
+              <td>${esc(r.invoice_number || "—")}</td>
+              <td><code>${esc(r.payment_reference || "")}</code></td>
+              <td class="num">${esc(r.expected_amount || r.amount || "")}</td>
+              <td class="num">${esc(r.received_amount || "—")}</td>
+              <td>${esc(r.currency || "")}</td>
+              <td>${status(BANK_TONE[(r.status || "").toUpperCase()] || "unverified")} ${esc(r.status || "")}</td>
+              <td>${esc(r.transaction_date || r.value_date || "")}</td>
+            </tr>`).join("")}</tbody>
+        </table></div>
+        ${rows.length > 8 ? `<p class="notice" style="margin-top:6px">Showing the 8 most recent of ${rows.length}.</p>` : ""}`;
+    }
+
+    function initReadonlyLedgerPanel() {
+      loadReadonlyLedger();
+      const refresh = byId("panelBankRefresh");
+      if (refresh) refresh.addEventListener("click", loadReadonlyLedger);
+      const search = byId("panelBankSearch");
+      if (search) search.addEventListener("input", () => {
+        clearTimeout(search._t);
+        search._t = setTimeout(loadReadonlyLedger, 250);
+      });
+      const open = byId("panelBankOpenFull");
+      if (open) open.addEventListener("click", (event) => {
+        event.preventDefault();
+        showPage("bank");
+      });
+    }
+
+    const A5_TONE = { COMPLETED: "passed", PENDING: "unverified", FAILED: "failed", REQUIRES_REVIEW: "failed" };
+
+    // ---- Agent 4: payment exception -----------------------------------
+    // Adapted from the uploaded React components:
+    //   ExceptionPanel  -> the diagnosis + evidence block
+    //   ApprovalBar     -> the retry-approval status strip
+    //   TimelinePanel   -> the investigation steps
+    //   RecordDrawer    -> collapsible raw record
+    const A4_RISK_TONE = { low: "passed", medium: "unverified", high: "failed" };
+
+    function renderAgent4(caseData) {
+      const reports = (caseData.reports || []).filter(r => r.agent === "agent_4");
+      const section = byId("a4Section");
+      if (!section) return;
+      if (!reports.length) { section.style.display = "none"; return; }
+      section.style.display = "";
+
+      const report = reports[reports.length - 1];
+      const d = report.data || {};
+      const code = d.failure_code;
+      const risk = d.risk_level || "high";
+      const approved = !!(caseData.approval && !caseData.approval.revoked);
+
+      // The LLM writes the narrative; the facts below it are deterministic.
+      const llm = d.llm_report || null;
+      const llmHtml = llm ? `
+        <div class="a4-block a4-report">
+          <div class="a4-report-tag">Agent 4 investigation report &middot; generated from verified records</div>
+          <h4 style="margin-top:8px">Customer's reported problem</h4>
+          <div class="a4-claim">${esc(llm.customer_problem || "—")}</div>
+          <h4 style="margin-top:9px">What GhostLedger investigated</h4>
+          <div>${esc(llm.investigation_summary || "—")}</div>
+          <h4 style="margin-top:9px">What the Mock Bank actually shows</h4>
+          <div class="a4-fact">${esc(llm.bank_findings || "—")}</div>
+          <h4 style="margin-top:9px">Root cause</h4>
+          <div class="a4-fact">${esc(llm.root_cause || "Unknown — the records do not establish a cause")}</div>
+          <h4 style="margin-top:9px">Recommended next steps</h4>
+          <div>${esc(llm.recommended_next_steps || "—")}</div>
+          <h4 style="margin-top:9px">What to tell the customer</h4>
+          <div>${esc(llm.customer_explanation || "—")}</div>
+          ${(llm.evidence_gaps || []).length ? `<h4 style="margin-top:9px">Evidence gaps</h4>
+            ${llm.evidence_gaps.map(g => `<div class="a1-pay">${status("unverified")} ${esc(g)}</div>`).join("")}` : ""}
+        </div>` : "";
+
+      // Evidence legend: claims vs facts vs unknown must stay distinguishable.
+      const legend = `
+        <div class="a4-legend">
+          <span><em class="lg-claim"></em> Customer claim (not verified)</span>
+          <span><em class="lg-fact"></em> Verified bank fact</span>
+          <span><em class="lg-unknown"></em> Unknown</span>
+        </div>`;
+
+      // --- ExceptionPanel -------------------------------------------------
+      const evidence = d.bank_evidence;
+      byId("a4Exception").innerHTML = llmHtml + legend + `
+        <div class="a4-block">
+          <div class="a4-head">
+            ${status(A4_RISK_TONE[risk] || "unverified")}
+            <b>${esc(d.diagnosis || report.summary || "Exception investigated")}</b>
+            ${code ? `<span class="a4-code">${esc(code)}</span>` : `<span class="a4-code">no reason code</span>`}
+          </div>
+          <div class="a4-kv">
+            <div><strong>Transaction status</strong>${esc(d.transaction_status || "—")}</div>
+            <div><strong>Mock Bank status</strong>${esc(d.bank_status || "no bank record")}</div>
+            <div><strong>Invoice</strong>${esc(d.invoice_number || "—")}</div>
+            <div><strong>Amount</strong>${esc(d.invoice_amount || "—")} ${esc(d.currency || "")}</div>
+            <div><strong>Payment reference</strong>${esc(d.provider_reference || "—")}</div>
+            <div><strong>Risk</strong>${esc(risk)}</div>
+          </div>
+        </div>
+        <div class="a4-block">
+          <h4>What to tell the customer</h4>
+          <div style="font-size:12.5px">${esc(d.customer_explanation || "—")}</div>
+          <h4 style="margin-top:9px">Suggested next step</h4>
+          <div style="font-size:12.5px">${esc(d.recommended_resolution || d.next_action || "—")}</div>
+        </div>
+        ${evidence ? `<div class="a4-block">
+          <h4>Mock Bank evidence</h4>
+          <div class="a4-kv">
+            <div><strong>Bank transaction</strong>${esc(evidence.entry_id || "—")}</div>
+            <div><strong>Bank status</strong>${esc(evidence.status || "—")}</div>
+            <div><strong>Reason code</strong>${esc(evidence.failure_code || "not reported")}</div>
+            <div><strong>Received</strong>${esc(evidence.received_amount || "nothing credited")}</div>
+            <div><strong>Transaction date</strong>${esc(evidence.transaction_date || "—")}</div>
+            <div><strong>Scenario</strong>${esc(evidence.scenario || "—")}</div>
+          </div>
+        </div>` : `<div class="a4-block"><h4>Mock Bank evidence</h4>
+          <div style="font-size:12px">The Mock Bank holds no record for this payment.</div></div>`}
+        ${(d.missing_details || []).length ? `<div class="a4-block">
+          <h4>Missing or incorrect details</h4>
+          ${d.missing_details.map(m => `<div class="a1-pay">${status("unverified")} ${esc(m)}</div>`).join("")}
+        </div>` : ""}`;
+
+      // --- ApprovalBar ----------------------------------------------------
+      byId("a4Approval").innerHTML = `
+        <div class="a4-block a4-approve ${approved ? "granted" : ""}">
+          <h4>Retry approval</h4>
+          <div class="a1-pay">${status(d.retry_permitted ? "passed" : "failed")}
+            <b>${d.retry_permitted ? "Retry permitted" : "Retry NOT permitted"}</b>
+            &mdash; ${esc(d.retry_permitted
+              ? "A human approved a new attempt."
+              : "Agent 4 never retries. A new attempt needs fresh human approval.")}</div>
+          <div class="a1-pay">${status(approved ? "passed" : "unverified")}
+            ${approved
+              ? `Approved by <b>${esc(caseData.approval.approved_by)}</b> for this exact payment`
+              : "No approval is currently valid for this case"}</div>
+          <div class="a1-pay">${status("passed")} No automatic retry was performed</div>
+        </div>`;
+
+      // --- TimelinePanel --------------------------------------------------
+      const steps = [
+        { label: "Payment attempt recorded", done: !!d.attempt, tone: "done" },
+        { label: `Mock Bank instruction ${d.bank_status ? "found (" + esc(d.bank_status) + ")" : "not found"}`,
+          done: !!d.bank_status, tone: d.bank_status ? "done" : "warn" },
+        { label: code ? `Failure reason code: ${esc(code)}` : "No failure reason reported by the bank",
+          done: !!code, tone: code ? "done" : "warn" },
+        { label: d.reconciliation_verdict ? `Agent 2 verdict: ${esc(d.reconciliation_verdict)}` : "No reconciliation discrepancy",
+          done: !!d.reconciliation_verdict, tone: d.reconciliation_verdict ? "fail" : "done" },
+        { label: "Escalated to human review", done: !!report.requires_human, tone: "warn" },
+      ];
+      byId("a4Timeline").innerHTML = `
+        <div class="a4-block">
+          <h4>Investigation timeline</h4>
+          ${steps.map(s2 => `<div class="a4-step ${s2.tone}"><span class="dot"></span><span>${s2.label}</span></div>`).join("")}
+        </div>`;
+
+      // --- RecordDrawer ---------------------------------------------------
+      const record = {
+        diagnosis: d.diagnosis,
+        failure_code: d.failure_code,
+        failure_reason: d.failure_reason,
+        failure_code_source: d.failure_code_source,
+        reconciliation: d.reconciliation,
+        missing_details: d.missing_details,
+        retry_permitted: d.retry_permitted,
+        bank_evidence: d.bank_evidence,
+        attempt_history: d.attempt_history,
+      };
+      byId("a4Record").innerHTML = `
+        <div class="a4-block">
+          <h4 style="cursor:pointer" id="a4DrawerToggle">Record &rsaquo; click to expand</h4>
+          <div id="a4DrawerBody" style="display:none">
+            <div class="a4-drawer">${esc(JSON.stringify(record, null, 2))}</div>
+          </div>
+        </div>`;
+      const toggle = byId("a4DrawerToggle");
+      const body = byId("a4DrawerBody");
+      if (toggle && body) {
+        toggle.addEventListener("click", () => {
+          const open = body.style.display !== "none";
+          body.style.display = open ? "none" : "";
+          toggle.innerHTML = open ? "Record &rsaquo; click to expand" : "Record &rsaquo; click to collapse";
+        });
+      }
+    }
+
+    function renderAgent2(caseData) {
+      // Agent 2's evidence report, shown whenever reconciliation ran.
+      const reports = (caseData.reports || []).filter(r => r.agent === "agent_2");
+      const section = byId("a2Section");
+      if (!section) return;
+      if (!reports.length) { section.style.display = "none"; return; }
+      section.style.display = "";
+
+      // The reconciliation verdict (from the Mock Bank path) or the evidence
+      // report from a payment-status inquiry.
+      const verdict = caseData.reconciliation || {};
+      const report = reports[reports.length - 1];
+      const data = report.data || {};
+      const matched = data.matched === true || verdict.verdict === "MATCHED";
+
+      const tone = matched ? "passed" : (report.requires_human ? "unverified" : "failed");
+      const headline = matched
+        ? "A settled bank transaction was found for this invoice."
+        : "No settled bank transaction could be verified for this invoice.";
+
+      const evidence = (data.matched_transactions || []).map(t => `
+        <div class="a1-pay">
+          <b>${esc(t.payment_reference || t.reference || "(no reference)")}</b>
+          &middot; ${esc(t.amount || "")} ${esc(t.currency || "")}
+          &middot; ${esc(t.status || "")}
+          ${t.invoice_number ? `&middot; ${esc(t.invoice_number)}` : ""}
+          ${t.transaction_date ? `&middot; ${esc(t.transaction_date)}` : ""}
+        </div>`).join("");
+
+      // Every finding, including failures, so the exact reason is visible.
+      const findings = (report.findings || []).map(f => `
+        <div class="a1-pay">${status(f.status)} <b>${esc(f.label)}</b> &mdash; ${esc(f.detail)}</div>`).join("");
+
+      const why = verdict.verdict && !matched
+        ? `<div class="a1-pay">${status("failed")} <b>Verdict</b> &mdash; ${esc(verdict.verdict)}
+             ${verdict.summary ? `<div class="muted" style="font-size:11px">${esc(verdict.summary)}</div>` : ""}</div>`
+        : "";
+
+      byId("a2Panel").innerHTML = `
+        <div class="a1-pay">${status(tone)} <b>${esc(headline)}</b></div>
+        ${why}
+        ${evidence ? `<h3 style="margin-top:10px">Settled bank evidence</h3>${evidence}` : ""}
+        <h3 style="margin-top:10px">Why this result</h3>
+        ${findings || '<div class="muted">No findings were recorded.</div>'}`;
+    }
+
+    function renderAgent5(caseData) {
+      const payment = caseData.payment;
+      const receipt = caseData.receipt;
+      const history = caseData.payment_history || [];
+      const approval = caseData.approval;
+      const canExecute = caseData.status === "APPROVED";
+      const awaiting = caseData.status === "AWAITING_APPROVAL";
+
+      // Hide the section entirely when this case never reaches payment.
+      const relevant = payment || receipt || approval || awaiting ||
+        caseData.status === "APPROVED" || caseData.status === "EXECUTING" ||
+        caseData.status === "PENDING" || history.length > 0;
+      if (!relevant) { byId("a5Section").style.display = "none"; return; }
+      byId("a5Section").style.display = "";
+
+      const statusText = payment
+        ? `${payment.provider_status} (${payment.status})`
+        : awaiting ? "Awaiting human approval"
+        : "Not executed";
+
+      const attemptRows = history.map(a => `
+        <div class="a1-pay">
+          ${status(a.status === "SUCCESS" ? "passed" : a.status === "FAILED" ? "failed" : "unverified")}
+          <b>${esc(a.provider_status)}</b>
+          ${a.provider_reference ? esc(a.provider_reference) : ""}
+          &middot; ${esc(a.amount ?? "")} ${esc(a.currency || "")}
+          ${a.failure_reason ? `&mdash; ${esc(a.failure_reason)}` : ""}
+        </div>`).join("");
+
+      const receiptHtml = receipt ? `
+        <div class="receipt">
+          <div class="head">
+            <div><strong>Payment receipt</strong><div class="ref">${esc(receipt.receipt_id)}</div></div>
+            <div class="amt">${esc(receipt.amount)} ${esc(receipt.currency || "")}</div>
+          </div>
+          <div class="facts">
+            <div class="fact"><strong>Invoice</strong>${esc(receipt.invoice_number || "")}</div>
+            <div class="fact"><strong>Payee</strong>${esc(receipt.vendor_name || "")}</div>
+            <div class="fact"><strong>Provider reference</strong><span class="ref">${esc(receipt.provider_reference || "")}</span></div>
+            <div class="fact"><strong>Settlement reference</strong><span class="ref">${esc(receipt.settlement_reference || "")}</span></div>
+            <div class="fact"><strong>Approved by</strong>${esc(receipt.approved_by || "")}</div>
+            <div class="fact"><strong>Settled at</strong>${esc(receipt.settled_at || "")}</div>
+          </div>
+          <div style="margin-top:10px"><strong style="font-size:11px;letter-spacing:.04em;color:var(--muted)">VERIFICATION</strong>
+            <ul>${(receipt.verification || []).map(v => `<li>${esc(v)}</li>`).join("")}</ul></div>
+          <p class="sim" style="margin-top:10px;margin-bottom:0">${esc(receipt.disclaimer)}</p>
+        </div>` : "";
+
+      const recon = caseData.reconciliation;
+      const reconTone = { SETTLEMENT_VERIFIED: "passed", DISCREPANCY_DETECTED: "failed" };
+      const reconHtml = recon ? `
+        <h3 style="margin-top:14px">Agent 2 &middot; Bank reconciliation</h3>
+        <div class="fact"><strong>Outcome</strong>${status(reconTone[recon.outcome] || "unverified")} ${esc(recon.outcome)}
+          ${recon.independent_evidence ? '<span class="muted">&middot; corroborated by independent bank evidence</span>'
+            : '<span class="muted">&middot; no independent bank evidence</span>'}</div>
+        ${recon.matched_reference ? `<div class="fact"><strong>Matched bank reference</strong><span class="ref">${esc(recon.matched_reference)}</span></div>` : ""}
+        ${(recon.findings || []).map(f => `<div class="a1-pay">${status(f.status)} <b>${esc(f.label)}</b> &mdash; ${esc(f.detail)}</div>`).join("")}
+        ${recon.outcome === "SETTLEMENT_VERIFIED"
+          ? ""
+          : `<p class="notice" style="margin-top:6px">The payment was executed, but reconciliation could not confirm settlement against independent bank evidence. The case stays under review.</p>`}
+      ` : "";
+
+      byId("a5Panel").innerHTML = `
+        <div class="sim">SIMULATED PAYMENT &mdash; no real funds are transferred. Agent 5 uses a synthetic provider for testing.</div>
+        <div class="a1-grid">
+          <div class="fact"><strong>Invoice</strong>${esc(caseData.invoice_number || "not provided")}</div>
+          <div class="fact"><strong>Payee</strong>${esc(caseData.vendor_name || "not provided")}</div>
+          <div class="fact"><strong>Amount due</strong>${esc(caseData.amount ?? "not provided")} ${esc(caseData.currency || "")}</div>
+          <div class="fact"><strong>Approved amount</strong>${approval ? esc(approval.amount) + " " + esc(approval.currency || "") : '<span class="muted">not approved</span>'}</div>
+          <div class="fact"><strong>Approval status</strong>${approval ? status(approval.revoked ? "failed" : "passed") + " by " + esc(approval.approved_by) : status("unverified")}</div>
+          <div class="fact"><strong>Payment status</strong>${status(A5_TONE[caseData.status] || "unverified")}<div class="muted" style="margin-top:3px">${esc(statusText)}</div></div>
+        </div>
+
+        <div style="margin-top:12px">
+          <button id="execBtn" type="button" ${canExecute ? "" : "disabled"}
+            style="${canExecute ? "" : "opacity:.5;cursor:not-allowed"}">
+            ${payment ? "Re-inspect payment" : "Execute synthetic payment"}
+          </button>
+          <p class="notice" style="margin-top:6px">
+            ${canExecute
+              ? "Human approval is valid. Clicking executes one synthetic payment."
+              : awaiting
+                ? "The button is disabled until a human approves this payment above."
+                : "No approved payment is available to execute for this case."}
+          </p>
+        </div>
+
+        ${attemptRows ? `<h3 style="margin-top:14px">Payment attempts</h3>${attemptRows}` : ""}
+        ${receiptHtml}
+        ${reconHtml}`;
+
+      const btn = byId("execBtn");
+      if (btn && canExecute) btn.addEventListener("click", executePayment);
+    }
+
+    async function executePayment() {
+      const caseId = currentCase && currentCase.case_id;
+      if (!caseId) return;
+      const btn = byId("execBtn");
+      if (btn) { btn.disabled = true; btn.textContent = "Processing…"; }
+      try {
+        const response = await fetch(`/workflow/cases/${caseId}/execute`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) { showProblem("Payment could not be executed.", [payload.detail || "Request failed."]); return; }
+        render(payload); loadCases();
+      } catch (error) { showProblem("Payment request failed.", [error.message]); }
+    }
+
+    function renderAgent1(caseData) {
+      // Find Agent 1's investigation, if it ran.
+      const report = (caseData.reports || []).slice().reverse().find(r => r.agent === "agent_1");
+      const inv = report && report.data && report.data.investigation;
+      if (!inv) { byId("a1Section").style.display = "none"; return; }
+      byId("a1Section").style.display = "";
+
+      const tone = A1_TONE[inv.status] || "unverified";
+      const best = inv.best_match;
+      const pay = inv.payment_analysis || {};
+
+      const signalsHtml = best ? (best.signals || []).map(s => `
+        <div class="a1-sig"><span class="${s.matched ? "yes" : "no"}">${s.matched ? "&#10003;" : "&#8226;"}</span>
+          <b>${esc(s.signal.replace(/_/g," "))}</b> ${esc(s.score)}/${esc(s.weight)} &mdash; ${esc(s.detail)}</div>`).join("") : "";
+
+      const candidatesHtml = (inv.candidates || []).slice(0, 4).map(c => `
+        <div class="a1-cand ${esc(c.match_band)}">
+          <div class="top"><b>${esc(c.invoice_number || "(no number)")}</b>
+            <span class="score">${esc(c.match_score)}/100</span></div>
+          <div class="a1-sig">${esc(c.vendor || "unknown vendor")} &middot; ${esc(c.amount ?? "?")} ${esc(c.currency || "")} &middot; ${esc(c.issue_date || "no date")}</div>
+          ${c.is_exact_duplicate ? '<div class="a1-sig yes">Exact duplicate (same number, vendor and amount)</div>' : ""}
+          ${(c.evidence || []).map(e => `<div class="a1-sig">&bull; ${esc(e)}</div>`).join("")}
+        </div>`).join("");
+
+      const payRecords = (pay.records || []).map(r => `
+        <div class="a1-pay">${status(r.verified ? "passed" : "unverified")}
+          <b>${esc(r.source.replace(/_/g," "))}</b>
+          ${r.reference ? esc(r.reference) : ""} &middot; ${esc(r.amount ?? "")} ${esc(r.currency || "")}
+          &mdash; ${esc(r.detail)}</div>`).join("");
+
+      byId("a1Panel").innerHTML = `
+        <div class="checks">
+          <div class="check ${tone === "failed" ? "failed" : tone === "passed" ? "passed" : "unverified"}">
+            <div class="head">${status(inv.status)}<span>${esc((inv.status || "").replace(/_/g," "))}</span></div>
+            <p>${esc(inv.summary || "")}</p>
+          </div>
+        </div>
+
+        ${prevStatusHtml(inv)}
+
+        <div class="a1-grid" style="margin-top:12px">
+          <div class="fact"><strong>Matching score</strong><span class="a1-score">${esc(inv.highest_score)}<span class="muted" style="font-size:13px">/100</span></span></div>
+          <div class="fact"><strong>Invoices compared</strong>${esc(inv.records_compared)}${inv.history_available ? "" : ' <span class="muted">(no history)</span>'}</div>
+          <div class="fact"><strong>Blocks payment</strong>${inv.blocks_payment ? "Yes" : "No"}</div>
+          <div class="fact"><strong>Needs Agent 2</strong>${inv.needs_agent_2 ? "Yes" : "No"}</div>
+        </div>
+
+        <h3 style="margin-top:14px">Current invoice</h3>
+        <div class="facts">
+          <div class="fact"><strong>Invoice</strong>${esc(inv.invoice_number || "not provided")}</div>
+          <div class="fact"><strong>Vendor</strong>${esc(inv.vendor || "not provided")}</div>
+          <div class="fact"><strong>Customer</strong>${esc(inv.customer || "not provided")}</div>
+          <div class="fact"><strong>Amount</strong>${esc(inv.amount ?? "not provided")} ${esc(inv.currency || "")}</div>
+        </div>
+
+        ${best ? `<h3 style="margin-top:14px">Matching evidence (closest invoice)</h3>
+          <div class="a1-cand ${esc(best.match_band)}">
+            <div class="top"><b>${esc(best.invoice_number || "(no number)")}</b><span class="score">${esc(best.match_score)}/100</span></div>
+            <div class="a1-sig">${esc(best.vendor || "")} &middot; ${esc(best.amount ?? "")} ${esc(best.currency || "")} &middot; ${esc(best.issue_date || "")}</div>
+            ${signalsHtml}
+          </div>` : '<p class="muted">No comparable invoice was found.</p>'}
+
+        ${candidatesHtml ? `<h3 style="margin-top:14px">Existing matching invoices</h3>${candidatesHtml}` : ""}
+
+        <h3 style="margin-top:14px">Payment records</h3>
+        <div class="a1-sig" style="margin-bottom:6px">
+          ${esc(pay.verified_settlements || 0)} verified settlement(s) &middot;
+          ${esc(pay.failed_attempts || 0)} failed &middot;
+          ${esc(pay.pending_transactions || 0)} pending &middot;
+          ${esc(pay.customer_reported || 0)} customer-reported
+        </div>
+        ${payRecords || '<p class="muted">No payment records found for this invoice.</p>'}
+
+        <h3 style="margin-top:14px">Recommended next action</h3>
+        <div class="agent" style="background:#fffbf2;border-color:#f0dcb4">
+          <div class="why">${esc(inv.recommended_next_action || "")}</div>
+        </div>`;
+    }
+
     function renderReports(caseData) {
       const reports = caseData.reports || [];
       if (!reports.length) { byId("activity").innerHTML = '<span class="muted">No specialist agent has run yet.</span>'; return; }
@@ -245,6 +1207,10 @@
       renderFlow(caseData);
       renderApproval(caseData);
       renderReports(caseData);
+      renderAgent1(caseData);
+      renderAgent2(caseData);
+      renderAgent4(caseData);
+      renderAgent5(caseData);
 
       byId("outcome").innerHTML = caseData.outcome
         ? `<p>${esc(caseData.outcome)}</p>` + (caseData.requires_human ? '<p class="muted">A human must resolve this case.</p>' : "")
@@ -362,6 +1328,9 @@
         if (!health.llm_configured && health.detail) showError(health.detail);
       } catch { byId("engine").textContent = "Model status unknown"; }
     })();
+    initReadonlyLedgerPanel();
+    initBankLedgerPage();
+    initDeveloperPanel();
     loadCases();
   </script>
 </body>

@@ -7,6 +7,7 @@ prior functionality keeps working.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from pathlib import Path
@@ -23,6 +24,21 @@ from .schemas import (
     WorkflowCase,
     WorkflowType,
 )
+
+
+def _stable_transaction_id(txn: "SyntheticTransaction") -> str:
+    """Deterministic id so seeding the same bank record twice is a no-op."""
+
+    material = "|".join(
+        [
+            (txn.reference or "").casefold(),
+            f"{txn.amount:.2f}",
+            (txn.currency or "").upper(),
+            txn.direction,
+            (txn.value_date or ""),
+        ]
+    )
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()[:32]
 
 
 def summarise_for_human(case: WorkflowCase) -> tuple[str, list[str], str]:
@@ -88,7 +104,10 @@ def summarise_for_human(case: WorkflowCase) -> tuple[str, list[str], str]:
             f"or reject it."
         ).strip()
     elif case.status == CaseStatus.pending:
-        why = why or "The payment outcome is uncertain."
+        # A pending payment needs a human to check the bank, so the explanation
+        # must say so even when an agent report already supplied a summary.
+        if not why:
+            why = "The payment is not yet confirmed: the bank has not settled it."
         # Authoritative for this status: a pending payment must never be retried.
         next_action = (
             "Check the payment provider for the result of the existing attempt before doing anything "
@@ -455,6 +474,8 @@ class WorkflowRepository:
         conn = self._connect()
         try:
             for txn in transactions:
+                # Persist the derived id so lookups return a populated record.
+                txn.transaction_id = txn.transaction_id or _stable_transaction_id(txn)
                 cursor = conn.execute(
                     """
                     INSERT OR IGNORE INTO synthetic_bank_transactions (

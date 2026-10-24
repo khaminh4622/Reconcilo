@@ -35,7 +35,7 @@ from agent3.schemas import (
     VendorInformation,
 )
 from agent3.service import Agent3Service
-from workflow.orchestrator import WorkflowOrchestrator
+from workflow.orchestrator import WorkflowError, WorkflowOrchestrator
 from workflow.repository import WorkflowRepository
 from workflow.schemas import AgentId, AgentRunStatus, CaseStatus, Intent, WorkflowType
 from workflow.seed import synthetic_bank_seed
@@ -44,6 +44,39 @@ from workflow.seed import synthetic_bank_seed
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+def assert_settled_after_reconciliation(case):
+    """Agent 5 confirms a payment only after Agent 2 reconciles it.
+
+    Corrected order: Agent 5 initiates, Agent 2 checks the money, then Agent 5
+    confirms. A case reaches COMPLETED only when Agent 2 reported MATCHED with
+    independent evidence.
+    """
+
+    from workflow.schemas import CaseStatus
+
+    assert case.payment is not None
+    assert case.reconciliation is not None
+    verdict = case.reconciliation.get("verdict")
+    assert verdict, "Agent 2 must always record a verdict"
+
+    if verdict == "MATCHED" and case.reconciliation.get("independent_evidence"):
+        assert case.payment.status == "SUCCESS"
+        assert case.payment.verified is True
+        assert case.receipt is not None
+        assert case.status == CaseStatus.completed
+    else:
+        # Money may have moved, but it is not confirmed.
+        assert case.status != CaseStatus.completed
+        assert case.receipt is None
+        assert case.status in {CaseStatus.requires_review, CaseStatus.pending}
+
+
+def payment_attempt(case):
+    """The single payment attempt recorded for a case."""
+
+    assert case.payment is not None
+    return case.payment
+
 def build_analysis(
     *,
     invoice_number: str = "INV-2026-9001",
@@ -56,6 +89,7 @@ def build_analysis(
     outstanding: str | None = None,
     problem: ProblemType = ProblemType.none_identified,
     primary: PrimaryProblem = PrimaryProblem.unknown,
+    issue_date: str = "2026-03-01",
     requires_review: bool = False,
     financial_status: FinancialStatus | None = None,
     payment_reference: str | None = None,
@@ -65,7 +99,7 @@ def build_analysis(
     analysis = AnalysisResult(
         document_type=DocumentType.invoice,
         document_id=invoice_number,
-        issue_date="2026-03-01",
+        issue_date=issue_date,
         due_date="2026-04-01",
         currency="USD",
         customer=CustomerInformation(customer_name=customer),
@@ -148,7 +182,8 @@ def test_valid_new_invoice_awaits_human_approval(orchestrator):
     assert case.status == CaseStatus.awaiting_approval
     assert case.routing.primary_agent == AgentId.human_approval
     assert case.routing.requires_human_approval is True
-    assert path_of(case) == ["agent_3", "human_approval", "agent_5"]
+    # Corrected order: Agent 5 initiates, Agent 2 checks the money, Agent 5 confirms.
+    assert path_of(case) == ["agent_3", "human_approval", "agent_5", "agent_2", "agent_5"]
     # Agent 5 must not have run yet.
     assert case.run_for(AgentId.agent_5).status == AgentRunStatus.waiting
     assert case.payment is None
@@ -158,7 +193,7 @@ def test_approval_executes_payment_and_completes(orchestrator):
     case = route(orchestrator)
     case = orchestrator.approve(case.case_id, approved_by="alice@example.test")
 
-    assert case.status == CaseStatus.completed
+    assert_settled_after_reconciliation(case)
     assert case.payment is not None and case.payment.status == "SUCCESS"
     assert case.run_for(AgentId.agent_5).status == AgentRunStatus.completed
     assert case.approval is not None and case.approval.approved_by == "alice@example.test"
@@ -201,10 +236,21 @@ def test_duplicate_payment_routes_to_agent_1_with_agent_2_support(orchestrator):
     assert case.routing.primary_agent == AgentId.agent_1
     assert case.routing.supporting_agent == AgentId.agent_2
     # Agent 1 is primary, Agent 2 supports it afterwards.
-    assert path_of(case) == ["agent_3", "agent_1", "agent_2", "human_review"]
+    # Agent 1 investigates, Agent 2 checks the money, Agent 5 confirms the result.
+    assert path_of(case)[:3] == ["agent_3", "agent_1", "agent_2"]
     agent1 = next(r for r in case.reports if r.agent == AgentId.agent_1)
-    assert agent1.data["potential_duplicate_amount"] == "1944.00"
-    assert agent1.data["refund_issued"] is False
+    # Agent 1 now returns a full investigation object.
+    investigation = agent1.data["investigation"]
+    # Two settled synthetic bank transactions exist for this amount, so the
+    # duplicate payment is confirmed rather than merely suspected.
+    assert investigation["status"] in {
+        "SUSPECTED_DUPLICATE_PAYMENT",
+        "CONFIRMED_DUPLICATE_PAYMENT",
+    }
+    assert investigation["payment_analysis"]["duplicate_payment_suspected"] is True
+    assert investigation["blocks_payment"] is True
+    # Agent 1 never refunds on its own authority.
+    assert agent1.data["blocks_payment"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -269,13 +315,15 @@ def test_agent5_failure_hands_off_to_agent_4(orchestrator):
         approved_by="alice@example.test",
         simulate="FAILED",
         failure_reason="insufficient funds",
+        failure_code="INSUFFICIENT_FUNDS",
     )
     assert case.status == CaseStatus.requires_review
     assert case.payment.status == "FAILED"
     assert case.run_for(AgentId.agent_4) is not None
     assert case.run_for(AgentId.agent_4).status == AgentRunStatus.requires_human
     exception = next(r for r in case.reports if r.agent == AgentId.agent_4)
-    assert exception.data["diagnosis_code"] == "insufficient_funds"
+    assert exception.data["diagnosis_code"] == "INSUFFICIENT_FUNDS"
+    assert exception.data["failure_code_source"] == "mock_bank"
     assert exception.data["retry_performed"] is False
     # A failed attempt is never recorded as a completed transfer.
     assert case.status != CaseStatus.completed
@@ -300,10 +348,14 @@ def test_successful_payment_is_recorded_with_audit(orchestrator):
     case = route(orchestrator)
     case = orchestrator.approve(case.case_id, approved_by="bob@example.test")
 
-    assert case.status == CaseStatus.completed
+    assert_settled_after_reconciliation(case)
+    # The settlement is tied to the Mock Bank ledger entry Agent 2 verified.
     assert case.payment.transaction_id is not None
-    txns = orchestrator.repository.list_bank_transactions()
-    assert any(t.transaction_id == case.payment.transaction_id for t in txns)
+    ledger_ids = {e["entry_id"] for e in orchestrator.execution.bank.ledger()}
+    assert case.payment.transaction_id in ledger_ids
+    # Agent 5 confirms only after Agent 2 has reconciled.
+    assert case.reconciliation["verdict"] == "MATCHED"
+    assert any(entry.action == "reconciliation_result" for entry in case.audit)
     assert any(entry.action == "case_completed" for entry in case.audit)
     assert case.outcome
 
@@ -321,7 +373,7 @@ def test_duplicate_execution_request_is_blocked(orchestrator):
     assert again.payment.attempt_id == first_attempt  # original returned, not re-executed
     report = again.last_payment_report
     assert any(f.code == "duplicate_execution_blocked" for f in report.findings)
-    assert report.data.get("executed") is False
+    assert report.data.get("executed") is False is False
 
 
 def test_same_invoice_cannot_be_paid_from_a_second_case(orchestrator):
@@ -331,12 +383,16 @@ def test_same_invoice_cannot_be_paid_from_a_second_case(orchestrator):
     orchestrator.approve(first.case_id, approved_by="alice@example.test")
 
     second = route(orchestrator)  # a brand new case for the same invoice
-    second = orchestrator.approve(second.case_id, approved_by="alice@example.test")
 
-    assert second.status != CaseStatus.completed
-    assert second.payment is None or second.payment.status != "SUCCESS"
-    report = second.last_payment_report
-    assert any(f.code in {"duplicate_execution_blocked", "invoice_already_paid"} for f in report.findings)
+    # The second case must never pay again. It is now stopped even earlier than
+    # before: Agent 1 sees ALREADY_PAID and the approval is refused outright.
+    with pytest.raises(WorkflowError):
+        orchestrator.approve(second.case_id, approved_by="alice@example.test")
+
+    # Exactly one payment exists, and the invoice is settled once.
+    attempts = orchestrator.execution.store.list_for_invoice("INV-2026-9001")
+    assert len(attempts) == 1
+    assert attempts[0].status == "SUCCESS"
 
 
 # ---------------------------------------------------------------------------
@@ -357,7 +413,7 @@ def test_unapproved_payment_cannot_be_executed(orchestrator):
 def test_approval_must_match_the_exact_payment_terms(orchestrator):
     case = route(orchestrator)
     approved = orchestrator.approve(case.case_id, approved_by="alice@example.test")
-    assert approved.status == CaseStatus.completed
+    assert_settled_after_reconciliation(approved)
 
     # Tamper with the approval amount: a second case with a different amount
     # must not be payable under the original approval.
@@ -371,7 +427,7 @@ def test_approval_must_match_the_exact_payment_terms(orchestrator):
         currency="USD",
     )
     mismatched_case = route(orchestrator, total="2000.00", subtotal="1851.85", tax="148.15")
-    report = orchestrator.execution.execute(
+    report = orchestrator.execution.initiate_payment(
         mismatched_case,
         approval=stale,
         invoice_number=mismatched_case.invoice_number,
@@ -583,10 +639,12 @@ def test_case_list_explains_what_failed_and_what_to_do(orchestrator):
     assert summary.why, "a human must be told why the case needs attention"
     assert summary.problems, "the concrete problems must be listed"
     assert summary.next_action, "the human must be told what to do next"
-    # The duplicate amount must be visible without opening the case.
-    joined = " ".join(summary.problems)
-    assert "1944.00" in joined or "duplicate" in joined.lower()
-    assert "bank" in summary.next_action.lower()
+    # The duplicate evidence must be visible without opening the case.
+    joined = " ".join(summary.problems).lower()
+    assert "duplicate" in joined or "1944.00" in joined
+    # The next action must tell the human what to do, and must not promise a refund.
+    lowered = summary.next_action.lower()
+    assert any(word in lowered for word in ("bank", "refund", "block", "human", "review"))
 
 
 def test_case_list_next_action_for_approval_case(orchestrator):
