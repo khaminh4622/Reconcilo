@@ -1,0 +1,46 @@
+# --- Secrets -------------------------------------------------------------
+# Never commit real credentials. Copy .env.example to .env locally instead.
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# --- Python --------------------------------------------------------------
+backend/.venv/
+backend/.deps/
+backend/.verify-deps/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# --- Runtime data and generated output -----------------------------------
+backend/data/
+backend/output/
+backend/tmp/
+backend/acl-recovery/
+*.db
+*.sqlite
+*.sqlite3
+
+# --- Test and manual scratch directories ---------------------------------
+backend/.test-tmp/
+backend/.test-tmp-*/
+backend/.test-manual/
+backend/.test-scratch/
+backend/.pytest-run/
+backend/.pytest-tmp/
+backend/.tmpdiag/
+backend/.manual/
+.test-tmp*/
+.pytest-tmp/
+
+# --- Editors and OS ------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+backend/synthetic_data/documents/
+backend/synthetic_data/evaluation_report.json
+backend/fixtures/pdfs/_realtest_*.pdf

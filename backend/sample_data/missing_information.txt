@@ -1,0 +1,4 @@
+INVOICE
+Vendor: Orbit Office Goods
+Issue Date: 2026-99-99
+Currency: USD

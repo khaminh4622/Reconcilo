@@ -1,0 +1,19 @@
+INVOICE
+Invoice Number: INV-2026-001
+Vendor: Blue Finch Supplies
+Vendor ID: VEND-001
+Customer: Avery Nguyen
+Customer ID: CUST-001
+Company: Aurora Studio 01
+Issue Date: 2026-01-10
+Due Date: 2026-02-09
+Currency: USD
+Payment Terms: Net 30
+Subtotal: 1000.00
+Tax: 80.00
+Discount: 0.00
+Total Due: 1080.00
+Amount Paid: 0.00
+Outstanding Balance: 1080.00
+Payment Status: unpaid
+Line Item: Fictional consulting | Quantity: 1.00 | Unit Price: 1000.00 | Line Total: 1000.00

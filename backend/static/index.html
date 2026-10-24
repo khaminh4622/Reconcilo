@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GhostLedger | Customer PDF Understanding</title>
+  <style>
+    :root { --ink:#101d32; --muted:#61708a; --line:#dce4ef; --paper:#fff; --wash:#f4f7fb; --blue:#1463dc; --green:#13755d; --amber:#b25d00; --red:#b93d4a; }
+    * { box-sizing:border-box; } body { margin:0; color:var(--ink); font:14px/1.45 Inter,ui-sans-serif,system-ui,sans-serif; background:var(--wash); }
+    header { background:#101d32; color:#f6f8fc; padding:18px max(24px,calc((100vw - 1180px)/2)); display:flex; justify-content:space-between; align-items:center; }
+    .brand { font-size:20px; font-weight:750; letter-spacing:-.4px; } .brand span { color:#68a6ff; }.pill { border:1px solid #466080; border-radius:999px; padding:5px 10px; color:#c7d7ef; font-size:12px; }
+    main { max-width:1180px; margin:0 auto; padding:28px 24px 56px; } h1 { margin:0; font-size:28px; letter-spacing:-.8px; }.intro { color:var(--muted); max-width:780px; margin:8px 0 24px; }
+    .grid { display:grid; grid-template-columns:340px 1fr; gap:20px; }.card { background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:19px; box-shadow:0 4px 18px #18345b0a; }
+    h2 { margin:0 0 14px; font-size:16px; } h3 { margin:18px 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); }.section { border-top:1px solid var(--line); margin-top:18px; padding-top:3px; }
+    label { display:block; color:var(--muted); font-size:12px; font-weight:700; margin:10px 0 5px; } input { width:100%; border:1px solid var(--line); border-radius:8px; padding:10px; font:inherit; color:var(--ink); background:#fff; }
+    .drop { border:1px dashed #9cb5d6; background:#f8fbff; padding:14px; border-radius:9px; color:var(--muted); }.notice { color:var(--muted); font-size:12px; margin:10px 0 0; }
+    button { width:100%; border:0; background:var(--blue); color:#fff; border-radius:8px; font:600 14px inherit; padding:11px 13px; cursor:pointer; margin-top:14px; } button:hover { filter:brightness(.95); } button:disabled { cursor:wait; opacity:.65; }
+    .empty { padding:58px 20px; text-align:center; color:var(--muted); border:1px dashed var(--line); border-radius:10px; }.hidden { display:none; }.error { color:var(--red); background:#fff0f1; padding:10px; border-radius:8px; margin-bottom:14px; }
+    .summary { display:grid; grid-template-columns:repeat(3,1fr); gap:11px; }.metric { padding:12px; background:#f8fafc; border:1px solid #edf1f6; border-radius:9px; }.metric label { margin:0 0 3px; }.metric div { font-size:15px; font-weight:700; overflow-wrap:anywhere; }
+    .facts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px 18px; }.fact { overflow-wrap:anywhere; }.fact strong { display:block; font-size:11px; letter-spacing:.04em; color:var(--muted); text-transform:uppercase; }
+    .status { display:inline-block; padding:4px 8px; border-radius:999px; font-size:12px; font-weight:750; text-transform:uppercase; letter-spacing:.03em; }
+    .live_llm,.passed,.matched,.verified { color:var(--green); background:#e8f7f2; }
+    .unavailable,.extraction_failed,.failed,.mismatch { color:var(--red); background:#fff0f1; }
+    .synthetic_fixture,.warning,.unverified,.not_available,.not_applicable,.reported,.requires_clarification { color:var(--amber); background:#fff7e9; }
+    .requires_review { color:#7a3d00; background:#ffe9d1; }
+    .agent { border-radius:10px; padding:13px 15px; border:1px solid var(--line); background:#f8fbff; }
+    .agent strong { display:block; font-size:15px; margin-bottom:4px; }
+    .agent .why { color:#36506f; font-size:13px; margin-top:6px; }
+    .checks { display:flex; flex-direction:column; gap:9px; margin-top:4px; }
+    .check { border-left:4px solid var(--line); padding:9px 11px; background:#fbfcfe; border-radius:0 8px 8px 0; }
+    .check.passed { border-left-color:#1f9d78; } .check.failed { border-left-color:#c84652; }
+    .check.unverified { border-left-color:#d18b16; } .check.not_applicable { border-left-color:#b8c4d4; }
+    .check .head { display:flex; gap:9px; align-items:center; font-weight:650; font-size:13px; }
+    .check p { margin:5px 0 0; color:#43566e; font-size:13px; }
+    .check .nums { margin-top:5px; font:12px/1.5 ui-monospace,Menlo,monospace; color:var(--muted); }
+    .banner { display:flex; gap:10px; align-items:flex-start; border-radius:9px; padding:11px 13px; margin-bottom:16px; font-size:13px; }
+    .banner.live { background:#e8f7f2; border:1px solid #b9e3d5; color:#0f5c49; }
+    .banner.demo { background:#fff7e9; border:1px solid #f0dcb4; color:#8a4a00; }
+    .banner.down { background:#fff0f1; border:1px solid #f2c7cc; color:#8f2531; }
+    .banner strong { display:block; margin-bottom:2px; }
+    ul { padding-left:19px; margin:8px 0; } li { margin:4px 0; } pre { max-height:400px; overflow:auto; background:#0e1a2c; color:#d8e7ff; border-radius:9px; padding:15px; font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .evidence { border-left:3px solid #68a6ff; padding:8px 10px; margin-top:8px; background:#f8fbff; color:#36506f; white-space:pre-wrap; }.evidence em { display:block; color:var(--muted); font-size:12px; margin-top:3px; font-style:normal; }
+    .muted { color:var(--muted); }
+    /* Workflow visualisation */
+    .flow { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:10px 0 4px; }
+    .node { display:flex; flex-direction:column; gap:3px; padding:9px 12px; border-radius:10px; border:1.5px solid var(--line); background:#fff; min-width:118px; }
+    .node .nm { font-weight:700; font-size:12px; }
+    .node .st { font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+    .node.running { border-color:#1463dc; background:#eef5ff; }
+    .node.completed { border-color:#1f9d78; background:#eefaf5; }
+    .node.requires_human { border-color:#d18b16; background:#fff8ea; }
+    .node.blocked { border-color:#c84652; background:#fff2f3; }
+    .node.waiting { opacity:.6; border-style:dashed; }
+    .arrow { color:var(--muted); font-size:16px; }
+    .case-row { display:flex; gap:10px; align-items:center; padding:9px 10px; border:1px solid var(--line); border-radius:8px; margin-bottom:7px; background:#fff; cursor:pointer; }
+    .case-row:hover { border-color:#9cb5d6; background:#f8fbff; }
+    .case-row .meta { flex:1; min-width:0; }
+    .case-row .meta b { font-size:13px; } .case-row .meta div { font-size:11px; color:var(--muted); overflow-wrap:anywhere; }
+    .case-row { align-items:flex-start; }
+    .case-row .meta { display:flex; flex-direction:column; gap:3px; }
+    .case-row .why-line { color:#36506f; font-size:12px; }
+    .case-row ul.prob { margin:3px 0 0; padding-left:16px; font-size:11.5px; color:#7a3d00; }
+    .case-row ul.prob li { margin:2px 0; }
+    .case-row .todo { font-size:11.5px; color:#0f5c49; font-weight:600; margin-top:3px; }
+    .report { border-left:4px solid #9cb5d6; padding:9px 11px; margin-top:9px; background:#fbfcfe; border-radius:0 8px 8px 0; }
+    .report h4 { margin:0 0 4px; font-size:13px; }
+    .report .sum { color:#43566e; font-size:13px; margin-bottom:6px; }
+    .report .fnd { font-size:12px; margin:4px 0; display:flex; gap:7px; align-items:flex-start; }
+    .audit-line { font:12px/1.6 ui-monospace,Menlo,monospace; color:#43566e; border-bottom:1px dashed #e4eaf2; padding:3px 0; }
+    .approve-box { border:1px solid #f0dcb4; background:#fffbf2; border-radius:10px; padding:13px; margin-top:10px; }
+    .approve-box input { margin-bottom:8px; }
+    .row2 { display:flex; gap:8px; } .row2 button { margin-top:0; }
+    @media (max-width:800px) { .grid,.summary,.facts { grid-template-columns:1fr; } .row2 { flex-direction:column; } }
+  </style>
+</head>
+<body>
+  <header><div class="brand">Ghost<span>Ledger</span> / Multi-Agent</div><div class="pill" id="engine">Checking model…</div></header>
+  <main>
+    <h1>Autonomous finance workflow</h1>
+    <p class="intro">Agent 3 reads the document, validates it and routes the case. The orchestrator then dispatches the right specialist — and nothing is paid without human approval.</p>
+    <div class="grid">
+      <section class="card">
+        <h2>1. Upload PDF</h2>
+        <div class="drop">
+          <label for="file">Customer document</label>
+          <input id="file" type="file" accept="application/pdf,.pdf">
+          <p class="notice">PDF only, up to 10 MB. Scanned/image-only PDFs require OCR and will be reported as unsupported.</p>
+        </div>
+        <button id="analyze" type="button">Run workflow</button>
+        <p class="notice">Agent 3 always runs first. A payment is only ever executed after explicit human approval.</p>
+        <div class="section">
+          <h3>Recent cases</h3>
+          <div id="cases"><span class="muted">No cases yet.</span></div>
+        </div>
+      </section>
+      <section class="card">
+        <div id="error" class="error hidden"></div>
+        <div id="empty" class="empty">Choose a customer PDF, then select <strong>Run workflow</strong>.</div>
+        <div id="result" class="hidden">
+          <div id="sourceBanner"></div>
+          <div class="summary">
+            <div class="metric"><label>Workflow</label><div id="wfType">—</div></div>
+            <div class="metric"><label>Case status</label><div id="review">—</div></div>
+            <div class="metric"><label>Intent</label><div id="intent">—</div></div>
+          </div>
+
+          <div class="section">
+            <h3>Workflow</h3>
+            <div id="flow" class="flow"></div>
+            <p class="notice" id="flowNote"></p>
+          </div>
+
+          <div class="section"><h3>Recommended next agent</h3><div id="routing"></div></div>
+          <div id="approvalBox"></div>
+          <div class="section"><h3>Outcome</h3><div id="outcome"></div></div>
+          <div class="section"><h3>Agent activity</h3><div id="activity"></div></div>
+          <div class="section"><h3>Customer information</h3><div id="customer" class="facts"></div></div>
+          <div class="section"><h3>Vendor information</h3><div id="vendor" class="facts"></div></div>
+          <div class="section"><h3>Financial information</h3><div id="financial" class="facts"></div></div>
+          <div class="section"><h3>Detected financial problem</h3><div id="problem"></div></div>
+          <div class="section"><h3>Validation findings</h3><div id="validation"></div></div>
+          <div class="section"><h3>Audit trail</h3><div id="audit"></div></div>
+          <div class="section"><h3>Case JSON</h3><pre id="json"></pre></div>
+        </div>
+      </section>
+    </div>
+  </main>
+  <script>
+    const byId = id => document.getElementById(id);
+    const esc = value => { const node = document.createElement("span"); node.textContent = value ?? "Not provided"; return node.innerHTML; };
+    const title = value => String(value || "not_available").replaceAll("_", " ");
+    const status = value => `<span class="status ${esc(value || "not_available")}">${esc(title(value))}</span>`;
+    const facts = rows => rows.map(([label,value]) => `<div class="fact"><strong>${esc(label)}</strong>${esc(value)}</div>`).join("");
+    const list = values => values && values.length ? `<ul>${values.map(value => `<li>${esc(value)}</li>`).join("")}</ul>` : '<span class="muted">None</span>';
+    const SOURCE_COPY = {
+      live_llm:  { cls:"live", title:"Live LLM analysis", body:"These results came from a real request to the configured language model, then were validated independently in Python." },
+      synthetic_fixture: { cls:"demo", title:"Synthetic demo fixture", body:"This result came from a prebuilt demo fixture, NOT from a live model call. Do not treat it as an analysis of your document." },
+      unavailable: { cls:"down", title:"AI analysis unavailable", body:"The configured language model could not be used, so no analysis was produced. No synthetic or placeholder result is shown in its place." }
+    };
+    function banner(source, data) {
+      const copy = SOURCE_COPY[source] || SOURCE_COPY.unavailable;
+      const errors = (data.processing_errors || []).map(e => `<div style="margin-top:5px">${esc(e)}</div>`).join("");
+      return `<div class="banner ${copy.cls}"><div><strong>${esc(copy.title)}</strong>${esc(copy.body)}${errors}</div></div>`;
+    }
+    function showProblem(heading, messages) {
+      byId("empty").classList.add("hidden"); byId("result").classList.add("hidden");
+      byId("error").classList.remove("hidden");
+      byId("error").innerHTML = `<strong>${esc(heading)}</strong><div style="margin-top:6px">${messages.map(esc).join("<br>")}</div>`;
+    }
+    // ---- Workflow dashboard rendering -------------------------------------
+    const AGENT_SHORT = { agent_1:"Agent 1", agent_2:"Agent 2", agent_3:"Agent 3",
+      agent_4:"Agent 4", agent_5:"Agent 5", human_approval:"Human Approval",
+      human_review:"Human Review", orchestrator:"Orchestrator" };
+    const STATUS_TONE = { completed:"passed", running:"live_llm", waiting:"not_available",
+      blocked:"failed", requires_human:"unverified", skipped:"not_available" };
+
+    function renderFlow(caseData) {
+      const runs = (caseData.agent_runs || []).slice().sort((a, b) => a.order - b.order).filter(r => r.agent !== "orchestrator");
+      if (!runs.length) { byId("flow").innerHTML = ""; return; }
+      const nodes = runs.map(r => {
+        const short = AGENT_SHORT[r.agent] || r.agent;
+        return `<div class="node ${esc(r.status)}"><span class="nm">${esc(short)}</span><span class="st">${esc(r.status.replace("_"," "))}</span></div>`;
+      });
+      byId("flow").innerHTML = nodes.join('<span class="arrow">&#8594;</span>');
+      const done = runs.filter(r => r.status === "completed").length;
+      byId("flowNote").textContent = `${done} of ${runs.length} steps complete. ` + (caseData.outcome || "");
+    }
+
+    function renderApproval(caseData) {
+      if (caseData.status !== "AWAITING_APPROVAL") {
+        byId("approvalBox").innerHTML = caseData.approval
+          ? `<div class="section"><h3>Approved</h3><div class="facts">${facts([
+              ["Approved by", caseData.approval.approved_by],
+              ["Approved at", caseData.approval.approved_at],
+              ["Amount", `${caseData.approval.amount ?? ""} ${caseData.approval.currency ?? ""}`],
+              ["Payee", caseData.approval.payee]])}</div></div>`
+          : "";
+        return;
+      }
+      // A human must type an approver; the UI cannot approve by itself.
+      byId("approvalBox").innerHTML = `
+        <div class="section"><h3>Human approval required</h3>
+          <div class="approve-box">
+            <p class="muted" style="margin-top:0">Agent 5 will not execute anything until a named human approves this exact invoice, payee and amount.</p>
+            <label for="approver">Approved by</label>
+            <input id="approver" type="text" placeholder="your.name@example.test">
+            <label for="simulate">Simulated outcome</label>
+            <input id="simulate" type="text" value="SUCCESS" placeholder="SUCCESS / FAILED / PENDING">
+            <div class="row2">
+              <button id="approveBtn" type="button">Approve &amp; execute</button>
+              <button id="rejectBtn" type="button" style="background:#8f2531">Reject</button>
+            </div>
+          </div>
+        </div>`;
+      byId("approveBtn").addEventListener("click", () => decide("approve"));
+      byId("rejectBtn").addEventListener("click", () => decide("reject"));
+    }
+
+    async function decide(action) {
+      const caseId = currentCase && currentCase.case_id; if (!caseId) return;
+      const who = (byId("approver") || {}).value || "";
+      if (!who.trim()) { showError("Enter the name of the person approving."); return; }
+      const simulate = ((byId("simulate") || {}).value || "SUCCESS").toUpperCase();
+      byId("approveBtn").disabled = true; if (byId("rejectBtn")) byId("rejectBtn").disabled = true;
+      try {
+        const url = action === "approve" ? `/workflow/cases/${caseId}/approve` : `/workflow/cases/${caseId}/reject`;
+        const body = action === "approve" ? { approved_by: who, simulate } : { rejected_by: who, reason: "Rejected from dashboard" };
+        const response = await fetch(url, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) { showProblem("Action could not be completed.", [payload.detail || "Request failed."]); return; }
+        byId("error").classList.add("hidden");
+        render(payload); loadCases();
+      } catch (e) { showProblem("Action failed.", [e.message]); }
+    }
+
+    function renderReports(caseData) {
+      const reports = caseData.reports || [];
+      if (!reports.length) { byId("activity").innerHTML = '<span class="muted">No specialist agent has run yet.</span>'; return; }
+      byId("activity").innerHTML = reports.map(r => {
+        const fnd = (r.findings || []).map(f => `<div class="fnd">${status(f.status)}<span>${esc(f.detail)}</span></div>`).join("");
+        return `<div class="report"><h4>${esc(r.agent_name)}</h4>
+          <div class="sum">${esc(r.summary)}</div>${fnd}
+          ${r.next_action ? `<div class="fnd"><span class="muted">Next: ${esc(r.next_action)}</span></div>` : ""}</div>`;
+      }).join("");
+    }
+
+    let currentCase = null;
+
+    function render(caseData) {
+      currentCase = caseData;
+      byId("error").classList.add("hidden"); byId("empty").classList.add("hidden"); byId("result").classList.remove("hidden");
+      const analysis = caseData.analysis || {};
+      const validation = analysis.validation || {};
+      const routing = caseData.routing || {};
+      const customer = analysis.customer_information || {};
+      const vendor = analysis.vendor_information || {};
+      const financial = analysis.financial_information || {};
+      const problem = analysis.detected_problem || {};
+
+      byId("sourceBanner").innerHTML = banner(analysis.analysis_source || "unavailable", analysis);
+      byId("wfType").textContent = title(caseData.workflow || "pending");
+      byId("review").innerHTML = status(caseData.status);
+      byId("intent").innerHTML = status(caseData.intent);
+
+      renderFlow(caseData);
+      renderApproval(caseData);
+      renderReports(caseData);
+
+      byId("outcome").innerHTML = caseData.outcome
+        ? `<p>${esc(caseData.outcome)}</p>` + (caseData.requires_human ? '<p class="muted">A human must resolve this case.</p>' : "")
+        : '<span class="muted">Case is still in progress.</span>';
+
+      byId("routing").innerHTML = routing.primary_agent
+        ? `<div class="agent"><strong>${esc(AGENT_SHORT[routing.primary_agent] || routing.primary_agent)}</strong>
+             <div>${status(routing.blocking ? "requires_review" : "passed")}
+             <span class="muted"> · priority ${esc(routing.priority || "normal")}</span></div>
+             <div class="why"><strong>Intent:</strong> ${esc(title(routing.intent))} · <strong>Validation:</strong> ${esc(title(routing.validation_status))}</div>
+             <div class="why">${esc(routing.reason)}</div>
+             <div class="why"><strong>Required next action:</strong> ${esc(routing.required_next_action)}</div>
+             ${routing.supporting_agent ? `<div class="why"><strong>Supporting agent:</strong> ${esc(AGENT_SHORT[routing.supporting_agent] || routing.supporting_agent)}</div>` : ""}</div>`
+        : '<span class="muted">No routing decision available.</span>';
+
+      byId("customer").innerHTML = facts([["Name",customer.customer_name],["Company",customer.company_name],["Email",customer.email],["Address",customer.address]]);
+      byId("vendor").innerHTML = facts([["Vendor",vendor.vendor_name],["Vendor ID",vendor.vendor_id],["Email",vendor.vendor_email],["Address",vendor.vendor_address]]);
+      const calc = validation.calculated || {};
+      byId("financial").innerHTML = facts([
+        ["Invoice number", caseData.invoice_number],
+        ["Currency", financial.currency || caseData.currency],
+        ["Subtotal", financial.subtotal],
+        ["Tax", financial.tax_amount],
+        ["Invoice total", financial.total_amount],
+        ["Reported payment", financial.amount_paid],
+        ["Reported outstanding", financial.outstanding_balance],
+        ["Potential duplicate", calc.potential_duplicate_amount],
+        ["Potential overpayment", calc.potential_overpayment],
+      ]);
+
+      const reported = problem.type && problem.type !== "none_identified";
+      const evidence = problem.source_evidence
+        ? `<div class="evidence">${esc(problem.source_evidence)}<em>${problem.page ? `PDF page ${problem.page}` : "PDF page unavailable"}</em></div>`
+        : (reported ? '<p class="muted">No verbatim PDF excerpt supports this problem, so it requires clarification.</p>' : "");
+      byId("problem").innerHTML = facts([["Type",title(problem.type)],["Primary problem",title(problem.primary_problem)],["Status",title(problem.status)],["Description",problem.description]]) + evidence;
+
+      const findings = validation.validation_findings || [];
+      const checkHtml = findings.length
+        ? `<div class="checks">${findings.map(function (c) {
+            const nums = [c.expected != null ? `expected ${c.expected}` : null,
+                          c.reported != null ? `reported ${c.reported}` : null,
+                          c.variance != null ? `variance ${c.variance}` : null].filter(Boolean).join(" · ");
+            return `<div class="check ${esc(c.status)}"><div class="head">${status(c.status)}<span>${esc(c.label)}</span></div>
+              <p>${esc(c.explanation)}</p>${nums ? `<div class="nums">${esc(nums)}</div>` : ""}</div>`;
+          }).join("")}</div>` : "";
+      byId("validation").innerHTML =
+        facts([["Financial consistency", title(validation.financial_consistency)],
+               ["Customer verification", title(validation.customer_verification)]])
+        + checkHtml
+        + `<div style="margin-top:12px"><strong>Missing information</strong>${list(analysis.missing_information)}</div>`;
+
+      const audit = caseData.audit || [];
+      byId("audit").innerHTML = audit.length
+        ? audit.map(e => `<div class="audit-line">${esc(e.at)} · <b>${esc(AGENT_SHORT[e.actor] || e.actor)}</b> · ${esc(e.action)} — ${esc(e.detail)}</div>`).join("")
+        : '<span class="muted">No audit entries.</span>';
+      byId("json").textContent = JSON.stringify(caseData, null, 2);
+    }
+
+    async function loadCases() {
+      try {
+        const cases = await (await fetch("/workflow/cases?limit=8")).json();
+        if (!cases.length) { byId("cases").innerHTML = '<span class="muted">No cases yet.</span>'; return; }
+        byId("cases").innerHTML = cases.map(c => {
+          // Show what is wrong and what to do, so a case can be triaged from the list.
+          const problems = (c.problems || []).slice(0, 2).map(p => `<li>${esc(p)}</li>`).join("");
+          const more = (c.problems || []).length > 2
+            ? `<li class="muted">and ${c.problems.length - 2} more</li>` : "";
+          return `<div class="case-row" data-id="${esc(c.case_id)}">
+            <div class="meta"><b>${esc(c.invoice_number || "No invoice number")}</b>
+              <div>${esc(c.vendor_name || "")} · ${esc(c.amount ?? "")} ${esc(c.currency || "")} · ${esc(c.intent.replace(/_/g," "))}</div>
+              ${c.why ? `<div class="why-line">${esc(c.why)}</div>` : ""}
+              ${problems ? `<ul class="prob">${problems}${more}</ul>` : ""}
+              ${c.next_action ? `<div class="todo">${esc(c.next_action)}</div>` : ""}
+            </div>
+            ${status(c.status)}
+          </div>`;
+        }).join("");
+        byId("cases").querySelectorAll(".case-row").forEach(row => {
+          row.addEventListener("click", async () => {
+            const data = await (await fetch(`/workflow/cases/${row.dataset.id}`)).json();
+            render(data);
+          });
+        });
+      } catch { byId("cases").innerHTML = '<span class="muted">Cases unavailable.</span>'; }
+    }
+
+    function showProblem(heading, messages) {
+      byId("empty").classList.add("hidden"); byId("result").classList.add("hidden");
+      byId("error").classList.remove("hidden");
+      byId("error").innerHTML = `<strong>${esc(heading)}</strong><div style="margin-top:6px">${messages.map(esc).join("<br>")}</div>`;
+    }
+    function showError(message) { byId("error").innerHTML = ""; byId("error").textContent = message; byId("error").classList.remove("hidden"); }
+
+    byId("analyze").addEventListener("click", async function () {
+      const file = byId("file").files[0]; if (!file) { showError("Choose a PDF before running the workflow."); return; }
+      this.disabled = true; const label = this.textContent; this.textContent = "Running…";
+      try {
+        const body = new FormData(); body.append("file", file);
+        const response = await fetch("/workflow/cases", { method:"POST", body });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) { showProblem("This document could not be processed.", [payload.detail || "The PDF could not be read."]); return; }
+        render(payload); loadCases();
+      } catch (error) { showProblem("Workflow request failed.", [error.message]); }
+      finally { this.disabled = false; this.textContent = label; }
+    });
+
+    // Show, before any upload, whether a live model is actually configured.
+    (async () => {
+      try {
+        const health = await (await fetch("/health")).json();
+        byId("engine").textContent = health.llm_configured
+          ? `Live model · ${health.llm_model}`
+          : "No model configured";
+        byId("engine").style.color = health.llm_configured ? "#8fe3c6" : "#ffb3bb";
+        if (!health.llm_configured && health.detail) showError(health.detail);
+      } catch { byId("engine").textContent = "Model status unknown"; }
+    })();
+    loadCases();
+  </script>
+</body>
+</html>
