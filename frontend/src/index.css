@@ -58,18 +58,12 @@ h1, h2, h3 {
   to { opacity: 1; transform: none; }
 }
 
-@keyframes ghost-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-4px); }
+@keyframes logo-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
 }
 
-@keyframes ledger-flip {
-  0%, 100% { transform: scaleX(1); }
-  50% { transform: scaleX(-1); }
-}
-
-.ghost-float { animation: ghost-float 3.6s ease-in-out infinite; }
-.ledger-flip { animation: ledger-flip 0.9s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.logo-pulse { animation: logo-pulse 1.4s ease-in-out infinite; }
 
 table.data {
   width: 100%;
@@ -108,5 +102,5 @@ table.data tbody tr[aria-selected="true"] td {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ghost-float, .ledger-flip, .rise { animation: none; }
+  .logo-pulse, .rise { animation: none; }
 }

@@ -218,7 +218,7 @@ def resolve_payment_state(
             obligation_state=ObligationState.unknown,
             invoice_amount=invoice_amount,
             reason=(
-                f"{len(unverified_attempts)} payment attempt(s) completed in GhostLedger, but no bank "
+                f"{len(unverified_attempts)} payment attempt(s) completed in Reconcilo, but no bank "
                 "settlement corroborates them. A completed attempt is not a verified transfer, so the "
                 "payment status is unknown pending reconciliation."
             ),

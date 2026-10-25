@@ -153,7 +153,7 @@ class PaymentExceptionSpecialist:
                 label="Transaction status",
                 status="info",
                 detail=(
-                    f"GhostLedger records the attempt as {status}"
+                    f"Reconcilo records the attempt as {status}"
                     + (f"; the Mock Bank reports {bank_status}" if bank_status else
                        "; the Mock Bank holds no record for this instruction")
                     + "."
@@ -399,7 +399,7 @@ class PaymentExceptionSpecialist:
             claims["wants"] = "The customer reports that a payment failed."
         elif problem.get("primary_problem"):
             claims["wants"] = (
-                f"The customer wants GhostLedger to resolve: "
+                f"The customer wants Reconcilo to resolve: "
                 f"{str(problem.get('primary_problem')).replace('_', ' ')}."
             )
         return claims

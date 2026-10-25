@@ -250,7 +250,7 @@ class PaymentReceipt(WorkflowModel):
     synthetic: bool = True
     disclaimer: str = (
         "SIMULATED PAYMENT - no real funds were transferred. This receipt is generated "
-        "by GhostLedger's synthetic payment provider for testing."
+        "by Reconcilo's synthetic payment provider for testing."
     )
     verification: list[str] = Field(default_factory=list)
 

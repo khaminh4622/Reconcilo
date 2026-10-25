@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 
 from agent3.extractor import ExtractionError, LLMExtractor
 
-SYSTEM_PROMPT = """You are Agent 4, the payment-exception specialist in GhostLedger.
+SYSTEM_PROMPT = """You are Agent 4, the payment-exception specialist in Reconcilo.
 
 You are given VERIFIED FACTS gathered by the system. Your job is to write a clear
 investigation report for a finance operations human.
@@ -47,7 +47,7 @@ Absolute rules:
 Respond as JSON with exactly these keys:
 {
   "customer_problem": "one sentence describing what the customer reported",
-  "investigation_summary": "what GhostLedger checked: records, bank ledger, attempts",
+  "investigation_summary": "what Reconcilo checked: records, bank ledger, attempts",
   "bank_findings": "what the Mock Bank actually shows, or that it has no record",
   "root_cause": "the cause, ONLY if a failure_reason_code is present; else 'Unknown - the records do not establish a cause'",
   "recommended_next_steps": "concrete, ordered steps for a human",

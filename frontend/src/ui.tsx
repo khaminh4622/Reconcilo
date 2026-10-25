@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api, ApiError } from "./api";
+import { LogoMark } from "./logo";
 import type { Tone } from "./labels";
 
 const TONE: Record<Tone, string> = {
@@ -97,26 +98,10 @@ export const Banner = ({ children }: { children: ReactNode }) => (
   <p className="rounded-xl bg-white px-4 py-2.5 text-sm text-tide shadow-sm ring-1 ring-line">{children}</p>
 );
 
-/** The mascot: a small ghost holding a ledger. It floats idle and flips the ledger while working. */
-export function Ghost({ working = false, size = 72 }: { working?: boolean; size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 64 64" role="img" aria-label={working ? "Ghost is working" : "GhostLedger ghost"} className="ghost-float shrink-0">
-      <path d="M12 30a20 20 0 0 1 40 0v24l-6-4-7 4-7-4-7 4-6-4-7 4z" fill="#D7EFEA" stroke="#0F6E6B" strokeWidth="2" />
-      <circle cx="25" cy="28" r="2.4" fill="#071833" />
-      <circle cx="39" cy="28" r="2.4" fill="#071833" />
-      <path d="M28 35q4 3 8 0" stroke="#071833" strokeWidth="1.8" fill="none" strokeLinecap="round" />
-      <g className={working ? "ledger-flip" : undefined}>
-        <rect x="22" y="40" width="20" height="14" rx="2" fill="#fff" stroke="#071833" strokeWidth="1.6" />
-        <path d="M32 40v14M25 45h4M25 49h4M35 45h4M35 49h4" stroke="#0F6E6B" strokeWidth="1.4" />
-      </g>
-    </svg>
-  );
-}
-
 export function Working({ text }: { text: string }) {
   return (
     <div role="status" aria-live="polite" className="flex items-center gap-4 py-8">
-      <Ghost working size={64} />
+      <LogoMark working size={56} tone="onLight" />
       <div>
         <p className="text-xs font-bold uppercase tracking-[0.14em] text-ocean">Working</p>
         <p className="text-lg font-semibold">{text}</p>

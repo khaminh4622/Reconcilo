@@ -446,7 +446,7 @@ class ReconciliationService:
                     MatchFinding(
                         code="claimed_but_unverified", label="Claimed paid, not verified", status="unverified",
                         detail=(
-                            "GhostLedger recorded a payment, but no bank credit corroborates it. "
+                            "Reconcilo recorded a payment, but no bank credit corroborates it. "
                             "The invoice must not be treated as settled."
                         ),
                     )

@@ -367,7 +367,7 @@ def build_payment_analysis(
                 verified=False,
                 counted_as_settlement=status == "SUCCESS",
                 detail=(
-                    f"GhostLedger payment attempt {status}"
+                    f"Reconcilo payment attempt {status}"
                     + (f" (reason: {attempt.get('failure_reason')})" if attempt.get("failure_reason") else "")
                     + "."
                 ),

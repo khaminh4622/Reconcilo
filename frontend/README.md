@@ -1,4 +1,4 @@
-# GhostLedger frontend
+# Reconcilo frontend
 
 Vite + React + TypeScript + Tailwind. Talks to the backend through Vite's proxy
 (`/auth`, `/workflow`, `/admin`, `/demo`, `/bank`, `/customers`, `/developer`, `/health`

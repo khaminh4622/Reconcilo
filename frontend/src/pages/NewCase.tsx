@@ -68,7 +68,7 @@ export default function NewCase() {
         )}
         <div className="mt-4 space-y-3">
           <ErrorText error={error} />
-          <Button onClick={send}>Send to GhostLedger</Button>
+          <Button onClick={send}>Send to Reconcilo</Button>
         </div>
       </Card>
     </div>

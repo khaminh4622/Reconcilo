@@ -101,7 +101,7 @@ export default function MyInvoices() {
           <DropPdf file={file} onFile={setFile} onError={setUploadError} />
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-3">
-          <Button onClick={upload} disabled={!file || busy}>Send to GhostLedger</Button>
+          <Button onClick={upload} disabled={!file || busy}>Send to Reconcilo</Button>
           <button type="button" className="text-sm font-semibold text-ocean hover:underline" onClick={reload}>Refresh list</button>
         </div>
         <div className="mt-3"><ErrorText error={uploadError} /></div>

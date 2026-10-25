@@ -736,7 +736,7 @@ class FinalConfirmationAgent:
         labels = [r.agent_name for r in case.reports if r.agent != self.agent]
         if not labels:
             return "No agent produced a report for this case."
-        return "GhostLedger checked this case with: " + ", ".join(labels) + "."
+        return "Reconcilo checked this case with: " + ", ".join(labels) + "."
 
     def _verified_findings(self, case: WorkflowCase, verdict) -> list[str]:
         facts: list[str] = []

@@ -70,7 +70,7 @@ export function CaseView({ c }: { c: WorkflowCase }) {
 
       <Findings c={c} />
 
-      <Collapse title="How did GhostLedger decide?">
+      <Collapse title="How did Reconcilo decide?">
         <Decision c={c} />
       </Collapse>
       <Collapse title="Full history">
@@ -103,7 +103,7 @@ export function Answer({ c, isCustomer }: { c: WorkflowCase; isCustomer: boolean
   const latest = [...c.reports].reverse().find((r) => r.summary);
   const title = response?.headline ?? statusLabel(c.status);
   const sentence =
-    response?.answer ?? c.pending_reason ?? c.why ?? latest?.summary ?? c.outcome ?? "GhostLedger is working on this case.";
+    response?.answer ?? c.pending_reason ?? c.why ?? latest?.summary ?? c.outcome ?? "Reconcilo is working on this case.";
   // next_action is written for the bank reviewer ("Approve … or reject it"), so
   // only admins see it; a customer's next step comes from their own panel.
   const steps = response?.next_steps ?? (!isCustomer && c.next_action ? [c.next_action] : []);

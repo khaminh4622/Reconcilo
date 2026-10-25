@@ -54,7 +54,7 @@ export async function api<T>(path: string, init: RequestInit & { json?: unknown 
   try {
     response = await fetch(path, { ...init, headers, body });
   } catch {
-    throw new ApiError(0, "Can't reach the GhostLedger server. Is the backend running?");
+    throw new ApiError(0, "Can't reach the Reconcilo server. Is the backend running?");
   }
   const parsed = await response.json().catch(() => null);
   if (response.status === 401 && token) {

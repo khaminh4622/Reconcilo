@@ -84,10 +84,10 @@ BANK_STATUS_LABELS = {
 }
 
 
-SYSTEM_PROMPT = """You are Agent 4, GhostLedger's payment support assistant.
+SYSTEM_PROMPT = """You are Agent 4, Reconcilo's payment support assistant.
 
 Reply to the customer in no more than 180 words. Use only the CASE FACTS
-provided in the user message. They came from case-scoped, read-only GhostLedger
+provided in the user message. They came from case-scoped, read-only Reconcilo
 and Mock Bank tools. Never invent an amount, payment reference, bank reason,
 approval, settlement, or vendor result.
 
@@ -440,7 +440,7 @@ class Agent4SupportAssistant:
         status = (bank.get("status") or "").upper()
         if status in LIVE_BANK_STATUSES:
             return False, (
-                "An existing payment request is still active or uncertain, so GhostLedger will not "
+                "An existing payment request is still active or uncertain, so Reconcilo will not "
                 "create another one."
             )
         if status == "SETTLED":
@@ -507,7 +507,7 @@ class Agent4SupportAssistant:
             ]
         if facts.get("can_request_payment"):
             return [
-                "GhostLedger has no confirmed payment for this invoice.",
+                "Reconcilo has no confirmed payment for this invoice.",
                 "Ask Agent 4 to prepare a new payment request. Agent 3 verifies the invoice and Agent 1 checks for duplicates.",
                 "The request becomes a PENDING_APPROVAL instruction in the Mock Bank and waits for a human bank decision. No money moves until that approval and processing finish.",
             ]
@@ -932,13 +932,13 @@ class Agent4SupportAssistant:
             return (
                 f"The bank records this payment for {invoice} as {status.lower()}. "
                 + (f"Its recorded reason is: {detail}. " if detail else "The bank did not record a reason. ")
-                + "No money moved. GhostLedger will not retry it automatically. If you want to try again, "
+                + "No money moved. Reconcilo will not retry it automatically. If you want to try again, "
                 "I can prepare a new verified request, but it will need fresh bank approval."
             )
         if action_id == "help_pay" or re.search(r"\b(help me pay|haven'?t paid|have not paid|new payment)\b", lower):
             if evidence.get("can_request_payment"):
                 return (
-                    f"GhostLedger has no confirmed payment for {invoice}. I can prepare a new verified "
+                    f"Reconcilo has no confirmed payment for {invoice}. I can prepare a new verified "
                     "request from this invoice. Agent 3 verifies the invoice and Agent 1 checks for "
                     "duplicates; if it is eligible, it becomes a PENDING_APPROVAL request in the Mock "
                     "Bank and waits for a human bank decision. No money moves without that approval."

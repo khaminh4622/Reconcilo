@@ -47,7 +47,7 @@ def _ensure_dataset(directory: Path) -> None:
 
 def create_app(service: Agent3Service | None = None, dataset_directory: Path | None = None) -> FastAPI:
     app = FastAPI(
-        title="GhostLedger Agent 3",
+        title="Reconcilo",
         version="0.1.0",
         description="LLM-powered customer PDF understanding with deterministic validation.",
     )
@@ -752,7 +752,7 @@ def create_app(service: Agent3Service | None = None, dataset_directory: Path | N
         if bank_status in {"PENDING_APPROVAL", "APPROVED", "PROCESSING", "UNCERTAIN"}:
             raise HTTPException(
                 status_code=409,
-                detail="An existing payment is still active or uncertain, so GhostLedger will not create another request.",
+                detail="An existing payment is still active or uncertain, so Reconcilo will not create another request.",
             )
         # The Mock Bank's own identity guard is checked before a new case is
         # created, so a second click cannot add a parallel live instruction.
@@ -769,7 +769,7 @@ def create_app(service: Agent3Service | None = None, dataset_directory: Path | N
         if live is not None:
             raise HTTPException(
                 status_code=409,
-                detail="An existing payment request is still active or uncertain, so GhostLedger will not create another request.",
+                detail="An existing payment request is still active or uncertain, so Reconcilo will not create another request.",
             )
         if evidence.get("bank_error") or bank_status == "UNAVAILABLE":
             raise HTTPException(
@@ -1083,7 +1083,7 @@ def create_app(service: Agent3Service | None = None, dataset_directory: Path | N
                 status_code=403,
                 detail=(
                     "Bank import is a developer-only testing tool. Customers never upload bank "
-                    "statements; GhostLedger creates bank records automatically."
+                    "statements; Reconcilo creates bank records automatically."
                 ),
             )
         expected_key = (os.getenv("GHOSTLEDGER_DEVELOPER_KEY") or "").strip()

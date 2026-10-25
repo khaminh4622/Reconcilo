@@ -146,7 +146,7 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         },
     },
     "agent4_payment_inquiry_unpaid.pdf": {
-        "description": "The customer asks about a payment for an invoice GhostLedger has never seen.",
+        "description": "The customer asks about a payment for an invoice Reconcilo has never seen.",
         "reading": {
             "document_type": "other",
             "document_id": "INV-A4-UNKNOWN-9999",

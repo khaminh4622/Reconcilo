@@ -364,7 +364,7 @@ class DuplicateInvestigator:
         next_action, needs_agent2, needs_human, blocks = STATUS_GUIDANCE[status]
         if status == InvestigationStatus.insufficient_information and not history_available:
             next_action = (
-                "GhostLedger holds no earlier invoice records to compare against, so this invoice cannot "
+                "Reconcilo holds no earlier invoice records to compare against, so this invoice cannot "
                 "be confirmed unique. A human should review it."
             )
 
@@ -685,7 +685,7 @@ class DuplicateInvestigator:
                     label="No comparison records",
                     status="unverified",
                     detail=(
-                        "GhostLedger has no earlier invoice records, so this invoice cannot be confirmed "
+                        "Reconcilo has no earlier invoice records, so this invoice cannot be confirmed "
                         "unique. That is different from being a duplicate."
                     ),
                 )

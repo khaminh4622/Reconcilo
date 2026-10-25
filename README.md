@@ -1,4 +1,4 @@
-# GhostLedger
+# Reconcilo
 
 A multi-agent autonomous finance system. Agent 3 reads customer financial
 documents, validates the numbers with deterministic Python, and routes the case

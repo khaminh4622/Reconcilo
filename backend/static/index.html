@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>GhostLedger | Customer PDF Understanding</title>
+  <title>Reconcilo | Customer PDF Understanding</title>
   <style>
     :root { --ink:#101d32; --muted:#61708a; --line:#dce4ef; --paper:#fff; --wash:#f4f7fb; --blue:#1463dc; --green:#13755d; --amber:#b25d00; --red:#b93d4a; }
     * { box-sizing:border-box; } body { margin:0; color:var(--ink); font:14px/1.45 Inter,ui-sans-serif,system-ui,sans-serif; background:var(--wash); }
@@ -143,7 +143,7 @@
   </style>
 </head>
 <body>
-  <header><div class="brand">Ghost<span>Ledger</span> / Multi-Agent</div>
+  <header><div class="brand">Reconcilo / Multi-Agent</div>
     <nav class="nav"><button id="navWorkflow" class="navbtn active" type="button">Workflow</button><button id="navBank" class="navbtn" type="button">Mock Bank Ledger</button><button id="navDev" class="navbtn" type="button" title="Developer tools">&hellip;</button></nav><div class="authbar"><span class="pill" id="accountPill" style="display:none"></span><button id="authOpen" class="navbtn" type="button">Sign in</button></div>
     <div class="pill" id="engine">Checking model…</div></header>
   <div id="authModal" class="modal hidden">
@@ -189,7 +189,7 @@
       </section>
       <section class="card">
         <h2>2. Mock Bank Ledger</h2>
-        <div class="sim">SIMULATED &mdash; NO REAL MONEY. Bank transactions are created automatically by GhostLedger's payment simulator. Read-only: nothing here can be edited, and no statement upload is needed.</div>
+        <div class="sim">SIMULATED &mdash; NO REAL MONEY. Bank transactions are created automatically by Reconcilo's payment simulator. Read-only: nothing here can be edited, and no statement upload is needed.</div>
         <div class="summary" style="grid-template-columns:repeat(2,1fr)">
           <div class="metric"><label>Transactions</label><div id="panelBankCount">—</div></div>
           <div class="metric"><label>Settled balance</label><div id="panelBankBalance">—</div></div>
@@ -256,7 +256,7 @@
   </main>
   <main id="pageBank" class="hidden">
     <h1>Mock Bank Ledger</h1>
-    <div class="sim" style="font-size:13px">SIMULATED &mdash; NO REAL MONEY. Every transaction on this page was created by GhostLedger's fictional payment simulator. No real bank account exists.</div>
+    <div class="sim" style="font-size:13px">SIMULATED &mdash; NO REAL MONEY. Every transaction on this page was created by Reconcilo's fictional payment simulator. No real bank account exists.</div>
     <div class="summary">
       <div class="metric"><label>Transactions</label><div id="bankCount">&mdash;</div></div>
       <div class="metric"><label>Settled balance</label><div id="bankBalance">&mdash;</div></div>
@@ -1064,7 +1064,7 @@
           <div class="a4-report-tag">Agent 4 investigation report &middot; generated from verified records</div>
           <h4 style="margin-top:8px">Customer's reported problem</h4>
           <div class="a4-claim">${esc(llm.customer_problem || "—")}</div>
-          <h4 style="margin-top:9px">What GhostLedger investigated</h4>
+          <h4 style="margin-top:9px">What Reconcilo investigated</h4>
           <div>${esc(llm.investigation_summary || "—")}</div>
           <h4 style="margin-top:9px">What the Mock Bank actually shows</h4>
           <div class="a4-fact">${esc(llm.bank_findings || "—")}</div>

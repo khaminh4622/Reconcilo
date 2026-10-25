@@ -3,7 +3,8 @@ import { api, getToken, setToken, setUnauthorizedHandler } from "./api";
 import { NAV_ICONS } from "./icons";
 import { go, useRoute } from "./router";
 import type { Account, Health } from "./types";
-import { Banner, Ghost, Working } from "./ui";
+import { Logo, LogoMark } from "./logo";
+import { Banner, Working } from "./ui";
 import SignIn from "./pages/SignIn";
 import NewCase from "./pages/NewCase";
 import MyCases from "./pages/MyCases";
@@ -100,7 +101,7 @@ export default function App() {
   const page = route[0] ?? "";
   let content;
   if (page === "demo-script") content = <DemoScript />;
-  else if (loading) content = <Working text="Opening GhostLedger" />;
+  else if (loading) content = <Working text="Opening Reconcilo" />;
   else if (!me) content = <SignIn onSignedIn={loadMe} />;
   else content = <Page me={me} route={route} />;
 
@@ -149,7 +150,7 @@ export function Page({ me, route }: { me: Me; route: string[] }) {
 
 const Notice = ({ text }: { text: string }) => (
   <div className="flex flex-col items-center gap-3 py-16 text-center">
-    <Ghost />
+    <LogoMark tone="onLight" size={56} />
     <p className="text-xl font-semibold">{text}</p>
   </div>
 );
@@ -188,7 +189,7 @@ function AppFrame({
           >
             <span className="block h-5 w-5">{menu ? "✕" : "☰"}</span>
           </button>
-          <span className="font-semibold">GhostLedger</span>
+          <Logo tone="onLight" mark={28} />
           <HealthDot health={health} className="ml-auto" onLight />
         </header>
         <main id="main" className="mx-auto max-w-6xl space-y-5 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
@@ -212,12 +213,11 @@ function Sidebar({
   const nav = navFor(me.account.role);
   return (
     <aside className={`fixed inset-y-0 left-0 z-40 flex w-[272px] flex-col bg-navy text-white transition-transform lg:static lg:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"}`}>
-      <div className="flex items-center gap-3 px-5 pb-4 pt-6">
-        <Ghost size={42} />
-        <div>
-          <a href="#/" className="block text-lg font-semibold tracking-tight" onClick={onNavigate}>GhostLedger</a>
-          <p className="text-xs text-sky/90">Simulated treasury</p>
-        </div>
+      <div className="px-5 pb-4 pt-6">
+        <a href="#/" onClick={onNavigate} className="block w-fit">
+          <Logo tone="onDark" mark={40} />
+        </a>
+        <p className="mt-2 text-xs text-sky/90">Simulated treasury</p>
       </div>
       <div className="px-5 pb-4">
         <HealthDot health={health} />

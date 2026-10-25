@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { api, ApiError, setToken } from "../api";
 import { go } from "../router";
-import { Button, Card, ErrorText, Ghost, Pill } from "../ui";
+import { Logo } from "../logo";
+import { Button, Card, ErrorText, Pill } from "../ui";
 
 // Seeded by `python -m tools.seed_demo_accounts` (backend/README.md).
 export const DEMO_ACCOUNTS = [
@@ -43,12 +44,9 @@ export default function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
     <div className="grid min-h-screen lg:grid-cols-[1.05fr_0.95fr]">
       <section className="relative hidden overflow-hidden bg-navy px-12 py-14 text-white lg:flex lg:flex-col lg:justify-between">
         <div>
-          <div className="flex items-center gap-3">
-            <Ghost size={52} />
-            <div>
-              <p className="text-xl font-semibold">GhostLedger</p>
-              <p className="text-sm text-sky">Simulated treasury · human approval required</p>
-            </div>
+          <div>
+            <Logo tone="onDark" mark={52} />
+            <p className="mt-2 text-sm text-sky">Simulated treasury · human approval required</p>
           </div>
           <h1 className="mt-16 max-w-md font-display text-5xl font-medium leading-[1.05] text-white">
             Invoices, agents, and a bank that waits for a person.
@@ -73,12 +71,9 @@ export default function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
       </section>
       <section className="flex items-center justify-center px-4 py-10">
         <div className="w-full max-w-md space-y-4">
-          <div className="flex items-center gap-3 lg:hidden">
-            <Ghost size={48} />
-            <div>
-              <p className="text-lg font-semibold">GhostLedger</p>
-              <p className="text-sm text-slate-600">Simulated treasury</p>
-            </div>
+          <div className="lg:hidden">
+            <Logo tone="onLight" mark={44} />
+            <p className="mt-2 text-sm text-slate-600">Simulated treasury</p>
           </div>
           <div>
             <h2 className="text-2xl font-semibold">{mode === "signup" ? "Create a customer account" : "Sign in"}</h2>

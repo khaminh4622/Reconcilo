@@ -1,4 +1,4 @@
-# GhostLedger - AI agents for invoice payments and customer support
+# Reconcilo - AI agents for invoice payments and customer support
 
 A customer uploads a PDF **or sends a message**. Agent 3 reads it, extracts and
 validates the facts, checks the customer's identity against stored records,
@@ -346,7 +346,7 @@ Also: `test_agent1_before_approval.py`, `test_customer_response.py`,
 `test_seed_demo_accounts.py`, and the earlier `test_workflow.py`,
 `test_workflow_architecture.py` and `test_agent_order.py`.
 
-# GhostLedger — Agent 3: Customer Document Understanding
+# Reconcilo — Agent 3: Customer Document Understanding
 
 Agent 3 reads a customer PDF, sends its extracted text to a configured
 OpenAI-compatible LLM, validates the returned claims independently in Python,
