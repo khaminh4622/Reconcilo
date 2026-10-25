@@ -58,16 +58,18 @@ h1, h2, h3 {
   to { opacity: 1; transform: none; }
 }
 
-/* Same pace as the old ghost: a few pixels of hover, plus a faint shimmer. */
-@keyframes logo-float {
-  0%, 100% { transform: translateY(0); opacity: 0.9; }
-  50% { transform: translateY(-4px); opacity: 0.84; }
+@keyframes ghost-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
 }
 
-.logo-float {
-  opacity: 0.88;
-  animation: logo-float 3.6s ease-in-out infinite;
+@keyframes ledger-flip {
+  0%, 100% { transform: scaleX(1); }
+  50% { transform: scaleX(-1); }
 }
+
+.ghost-float { animation: ghost-float 3.6s ease-in-out infinite; }
+.ledger-flip { animation: ledger-flip 0.9s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
 
 table.data {
   width: 100%;
@@ -106,6 +108,5 @@ table.data tbody tr[aria-selected="true"] td {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .logo-float, .rise { animation: none; }
-  .logo-float { opacity: 0.88; transform: none; }
+  .ghost-float, .ledger-flip, .rise { animation: none; }
 }
