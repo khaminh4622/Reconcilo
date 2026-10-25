@@ -1,6 +1,9 @@
 // Fetch wrapper: bearer token in memory + sessionStorage, backend `detail`
 // surfaced as the error message, and 401 sends the user back to sign-in.
 
+import { beginChatSession, endChatSession } from "./chatSession";
+
+
 const KEY = "ghostledger.token";
 let token: string | null = safeGet();
 let onUnauthorized: () => void = () => {};
@@ -16,8 +19,13 @@ function safeGet(): string | null {
 export function setToken(value: string | null) {
   token = value;
   try {
-    if (value) sessionStorage.setItem(KEY, value);
-    else sessionStorage.removeItem(KEY);
+    if (value) {
+      sessionStorage.setItem(KEY, value);
+      beginChatSession();
+    } else {
+      sessionStorage.removeItem(KEY);
+      endChatSession();
+    }
   } catch {
     // Storage blocked: the in-memory token still works for this tab.
   }

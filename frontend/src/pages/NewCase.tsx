@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api, ApiError } from "../api";
+import { forgetChatCase } from "../chatSession";
 import { go } from "../router";
 import type { WorkflowCase } from "../types";
 import { Button, Card, ErrorText, PageIntro, Working } from "../ui";
@@ -27,6 +28,7 @@ export default function NewCase() {
       } else {
         created = await api<WorkflowCase>("/workflow/cases/message", { method: "POST", json: { message } });
       }
+      forgetChatCase(created.case_id);
       go(`/cases/${created.case_id}`);
     } catch (e) {
       setError((e as ApiError).message);

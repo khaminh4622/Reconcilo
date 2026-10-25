@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api, ApiError } from "../api";
+import { forgetChatCase } from "../chatSession";
 import { money } from "../labels";
 import type { WorkflowCase } from "../types";
 import { Button, Card, Empty, ErrorText, PageIntro, Pill, Working, useLoad } from "../ui";
@@ -45,6 +46,7 @@ export default function Investigate() {
     setBusy(true);
     try {
       const created = await api<WorkflowCase>("/workflow/cases/message", { method: "POST", json: { message: text } });
+      forgetChatCase(created.case_id);
       setResult(created as unknown as Record<string, any>);
       if (created.reports?.some((r) => r.agent === "agent_4")) {
         setException(created as unknown as Record<string, any>);

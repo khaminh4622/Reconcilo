@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useSession } from "../App";
 import { api } from "../api";
+import { chatSessionId, earlierMessageIds, revealEarlierMessages } from "../chatSession";
 import { money, statusLabel, statusTone, when } from "../labels";
 import type {
   Agent4Conversation,
@@ -24,13 +25,14 @@ export default function Agent4Chat({ c }: { c: WorkflowCase }) {
   const { me } = useSession();
   const isStaff = Boolean(me && me.account.role !== "CUSTOMER");
   const accountId = me?.account.account_id ?? null;
-  // The transcript on screen belongs to one signed-in account and one case.
-  // Changing either one drops the previous view before the next load arrives.
-  const scopeKey = `${accountId ?? ""}:${c.case_id}`;
+  // A new sign-in, account, or case drops the previous view before the next load.
+  const scopeKey = `${chatSessionId()}:${accountId ?? ""}:${c.case_id}`;
   const path = `/workflow/cases/${encodeURIComponent(c.case_id)}/agent4/conversation`;
   const [loadError, setLoadError] = useState<{ key: string; message: string } | null>(null);
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [messages, setMessages] = useState<Agent4Message[]>([]);
+  const [earlierIds, setEarlierIds] = useState<string[]>([]);
+  const [showEarlier, setShowEarlier] = useState(false);
   const [status, setStatus] = useState<Agent4PaymentStatus | null>(null);
   const [actions, setActions] = useState<Agent4SuggestedAction[]>([]);
   const [nextSteps, setNextSteps] = useState<string[]>([]);
@@ -53,12 +55,16 @@ export default function Agent4Chat({ c }: { c: WorkflowCase }) {
     setNewCase(null);
     setSending(false);
     setRequesting(false);
+    setEarlierIds([]);
+    setShowEarlier(false);
   }
 
   useEffect(() => {
     let live = true;
     setLoadedKey(null);
     setMessages([]);
+    setEarlierIds([]);
+    setShowEarlier(false);
     setStatus(null);
     setActions([]);
     setNextSteps([]);
@@ -83,7 +89,11 @@ export default function Agent4Chat({ c }: { c: WorkflowCase }) {
   }, [messages.length, sending, requesting]);
 
   function applyConversation(conversation: Agent4Conversation) {
-    setMessages(conversation.messages ?? []);
+    const rows = conversation.messages ?? [];
+    const view = earlierMessageIds(c.case_id, rows.map((row) => row.message_id));
+    setMessages(rows);
+    setEarlierIds(view.earlier);
+    setShowEarlier(view.revealed);
     setStatus(conversation.payment_status ?? null);
     setActions(conversation.suggested_actions ?? []);
     setNextSteps(conversation.next_steps ?? conversation.payment_status?.next_steps ?? []);
@@ -173,6 +183,9 @@ export default function Agent4Chat({ c }: { c: WorkflowCase }) {
     [...c.reports].reverse().find((report) => report.agent === "agent_4")?.summary ||
     null;
   const bank = status?.bank ?? null;
+  const earlier = new Set(earlierIds);
+  const hiddenCount = messages.filter((message) => earlier.has(message.message_id)).length;
+  const visibleMessages = showEarlier ? messages : messages.filter((message) => !earlier.has(message.message_id));
 
   return (
     <Card className="scroll-mt-4">
@@ -222,18 +235,31 @@ export default function Agent4Chat({ c }: { c: WorkflowCase }) {
               </div>
             )}
 
+            {!showEarlier && hiddenCount > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  revealEarlierMessages(c.case_id);
+                  setShowEarlier(true);
+                }}
+                className="mt-4 text-xs font-semibold text-ocean hover:underline"
+              >
+                Show earlier messages ({hiddenCount})
+              </button>
+            )}
+
             <div
               className="mt-4 max-h-[28rem] space-y-3 overflow-y-auto rounded-2xl bg-[#eef3f4] p-4 ring-1 ring-line"
               role="log"
               aria-live="polite"
               aria-label="Conversation with Agent 4"
             >
-              {messages.length === 0 && !sending && (
+              {visibleMessages.length === 0 && !sending && (
                 <p className="py-6 text-center text-sm text-slate-500 dark:text-slate-400">
                   No messages yet. Ask Agent 4 about this payment or pick a suggested action below.
                 </p>
               )}
-              {messages.map((message) => <Bubble key={message.message_id} message={message} />)}
+              {visibleMessages.map((message) => <Bubble key={message.message_id} message={message} />)}
               {sending && (
                 <div role="status" className="flex items-center gap-2 px-1 text-sm text-slate-600">
                   <span className="flex gap-1" aria-hidden>
@@ -328,9 +354,9 @@ export default function Agent4Chat({ c }: { c: WorkflowCase }) {
             </form>
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
               {isStaff ? "You are replying as authorized bank staff. " : ""}
-              Messages are stored with this case and remain after refresh or sign-in. Agent 4 reads
-              only this customer&apos;s case-scoped records; responses are simulated and no real money
-              moves.
+              This screen starts empty each sign-in. Earlier messages stay saved with the case and
+              can be shown on request. Agent 4 reads only this customer&apos;s case-scoped records;
+              responses are simulated and no real money moves.
             </p>
             {sendError && <div className="mt-2"><ErrorText error={sendError} /></div>}
           </>

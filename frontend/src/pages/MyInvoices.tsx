@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { api, ApiError } from "../api";
+import { forgetChatCase } from "../chatSession";
 import { go } from "../router";
 import { money, statusLabel, statusTone, when } from "../labels";
 import type { WorkflowCase } from "../types";
@@ -76,6 +77,7 @@ export default function MyInvoices() {
       const form = new FormData();
       form.append("file", file);
       const created = await api<WorkflowCase>("/workflow/cases", { method: "POST", body: form });
+      forgetChatCase(created.case_id);
       go(`/cases/${created.case_id}`);
     } catch (e) {
       setUploadError((e as ApiError).message);
