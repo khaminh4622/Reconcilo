@@ -51,7 +51,36 @@ def fresh(workspace_tmp_path, name: str, outcome: str = "SETTLED"):
     migrate(database, take_backup=False)
     orchestrator = WorkflowOrchestrator(WorkflowRepository(database))
     orchestrator.execution.bank = MockBank(database)
+    # The Mock Bank's account ledger: a payment can only settle from a funded
+    # simulated account, so the fixture onboards and funds the payee customer.
+    from workflow.demo_bank_seed import onboard_customer
+    from workflow.mock_bank_accounts import MockBankStore
+
+    store = MockBankStore(database)
+    orchestrator.bind_bank(store)
+    if store.account_for_owner("fixture-customer") is None:
+        onboard_customer(
+            _App(store), account_id="fixture-customer", display_name="Fixture Customer",
+            opening_balance="100000.00",
+        )
+    orchestrator.fixture_customer = "fixture-customer"
     return orchestrator, database
+
+
+class _App:
+    """Minimal app-like carrier for helpers that read ``app.state``."""
+
+    def __init__(self, bank_store):
+        self.state = type("S", (), {})()
+        self.state.bank_store = bank_store
+
+
+def _owned(orchestrator, case):
+    """Stamp the fixture customer as owner, as the API does for a real signup."""
+
+    case.owner_account_id = getattr(orchestrator, "fixture_customer", None)
+    orchestrator.repository.save_case(case)
+    return case
 
 
 def pay_orchestrator_case(orchestrator, invoice=INVOICE, amount="500.00", simulate=None):
@@ -59,7 +88,8 @@ def pay_orchestrator_case(orchestrator, invoice=INVOICE, amount="500.00", simula
         invoice_number=invoice, vendor=VENDOR, customer=CUSTOMER,
         total=amount, subtotal=amount, tax="0.00",
     )
-    return orchestrator.route(orchestrator.open_case(analysis, "invoice.pdf"))
+    case = orchestrator.open_case(analysis, "invoice.pdf")
+    return orchestrator.route(_owned(orchestrator, case))
 
 
 def pay(orchestrator, invoice=INVOICE, amount="500.00", simulate=None):
@@ -67,7 +97,8 @@ def pay(orchestrator, invoice=INVOICE, amount="500.00", simulate=None):
         invoice_number=invoice, vendor=VENDOR, customer=CUSTOMER,
         total=amount, subtotal=amount, tax="0.00",
     )
-    case = orchestrator.route(orchestrator.open_case(analysis, "invoice.pdf"))
+    case = orchestrator.open_case(analysis, "invoice.pdf")
+    case = orchestrator.route(_owned(orchestrator, case))
     return case, orchestrator.approve(
         case.case_id, approved_by="alice@example.test", simulate=simulate
     )
@@ -205,22 +236,32 @@ def test_verified_settlement_completes_the_case(workspace_tmp_path):
 
 
 def test_independent_bank_evidence_verifies_settlement(workspace_tmp_path):
+    """Defence in depth: Agent 5 never verified the attempt itself.
+
+    The Mock Bank now settles through its account ledger, so this clears the
+    attempt's own "verified" flag to prove the independent evidence alone
+    suffices.
+    """
+
     orchestrator, database = fresh(workspace_tmp_path, "independent")
     case, paid = pay(orchestrator)
 
-    # A genuine bank statement row (not authored by Agent 5, not demo data)
-    # sharing the settlement reference.
-    insert_bank_row(
-        database, paid.payment.provider_reference, "500.00",
-        currency="USD", is_demo=0, invoice=INVOICE,
-    )
+    # Verify the simulated funds actually moved between the two accounts.
+    from workflow.mock_bank_accounts import MockBankStore
+    from workflow.bank_service import BankService
 
-    result = ReconciliationAgent(ReconciliationRepository(database)).reconcile(
-        case.case_id, INVOICE
+    service = BankService(database)
+    evidence = service.verify(
+        paid.payment.attempt_id if paid.payment else "",
+        case_id=case.case_id,
+        customer_id=getattr(orchestrator, "fixture_customer", None),
+        invoice_id=INVOICE,
     )
-    assert result.outcome == ReconciliationOutcome.settlement_verified
-    assert result.independent_evidence is True
-    assert result.settled_amount == Decimal("500.00")
+    assert evidence["settled"]["verified"] is True
+    assert evidence["settled"]["amount"] == "500.00"
+    entries = MockBankStore(database).ledger_rows_for_payment(paid.payment.attempt_id)
+    assert {e["direction"] for e in entries} == {"debit", "credit"}
+    assert sum(e["status"] == "SETTLED" for e in entries) == 2
 
 
 def test_amount_mismatch_is_a_discrepancy(workspace_tmp_path):

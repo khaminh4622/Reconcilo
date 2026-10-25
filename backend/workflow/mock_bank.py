@@ -183,6 +183,10 @@ class MockBank:
                 ("failure_code", "TEXT"),
                 ("failure_reason", "TEXT"),
                 ("audit_timestamp", "TEXT"),
+                # Account-linked settlement evidence (see mock_bank_accounts.py).
+                ("payment_id", "TEXT"),
+                ("entry_type", "TEXT"),
+                ("account_id", "TEXT"),
             ):
                 if name not in present:
                     conn.execute(f"ALTER TABLE mock_bank_ledger ADD COLUMN {name} {ddl}")
@@ -191,6 +195,9 @@ class MockBank:
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS ix_mock_bank_invoice ON mock_bank_ledger(invoice_number)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS ix_mock_bank_payment ON mock_bank_ledger(payment_id)"
             )
             conn.commit()
         finally:
@@ -491,3 +498,21 @@ class MockBank:
             return conn.execute("SELECT COUNT(*) FROM mock_bank_ledger").fetchone()[0]
         finally:
             conn.close()
+
+    def entries_for_payment(self, payment_id: str) -> list[dict]:
+        """Ledger rows the bank posted for one payment request.
+
+        Populated by ``mock_bank_accounts.MockBankStore`` when it commits a
+        transfer: the ``instruction_id`` is the payment request id and
+        ``entry_type`` is DEBIT, CREDIT, OPENING_BALANCE or TOP_UP.
+        """
+
+        conn = self._connect()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM mock_bank_ledger WHERE instruction_id = ? ORDER BY rowid",
+                (payment_id,),
+            ).fetchall()
+        finally:
+            conn.close()
+        return [dict(row) for row in rows]

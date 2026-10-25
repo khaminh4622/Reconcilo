@@ -8,8 +8,17 @@
 
 # --- Python --------------------------------------------------------------
 backend/.venv/
+backend/.venv*/
 backend/.deps/
 backend/.verify-deps/
+.pip-cache/
+.piptmp/
+pip-build-tracker-*/
+pip-ephem-wheel-cache-*/
+pip-install-*/
+pytest-cache-files-*/
+.test-deps/
+.test-scratch/
 __pycache__/
 *.py[cod]
 *.egg-info/

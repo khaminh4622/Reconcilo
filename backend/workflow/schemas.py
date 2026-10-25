@@ -180,6 +180,9 @@ class ApprovalRecord(WorkflowModel):
 
     approval_id: str = Field(default_factory=lambda: str(uuid4()))
     approved_by: str
+    # The signed-in bank-side account that approved. None only for approvals
+    # recorded before approvals were tied to accounts.
+    approved_by_account_id: str | None = None
     approved_at: str = Field(default_factory=utc_now)
     # Binding terms: an approval for a different amount or payee is not valid.
     invoice_number: str | None = None
@@ -280,6 +283,27 @@ class AuditEntry(WorkflowModel):
     detail: str
     status_before: str | None = None
     status_after: str | None = None
+    # The signed-in account behind a human action (approval, rejection, demo run).
+    actor_account_id: str | None = None
+
+
+class CustomerResponse(WorkflowModel):
+    """Agent 5's plain-language answer to the customer, set when a case ends.
+
+    The facts (outcome, whether money settled) come from the agents' structured
+    reports. Only ``answer`` and ``next_steps`` may ever be phrased by a model,
+    and a phrasing that claims settlement without verification is discarded.
+    """
+
+    case_status: str
+    outcome: str
+    headline: str
+    answer: str
+    next_steps: list[str] = Field(default_factory=list)
+    payment_settled: bool = False
+    missing_information: list[str] = Field(default_factory=list)
+    generated_by: Literal["deterministic", "llm"] = "deterministic"
+    generated_at: str = Field(default_factory=utc_now)
 
 
 class AgentRun(WorkflowModel):
@@ -336,8 +360,24 @@ class WorkflowCase(WorkflowModel):
     outcome: str | None = None
     requires_human: bool = False
     pending_reason: str | None = None
+    # Set by Agent 5 whenever the case reaches COMPLETED, FAILED or REQUIRES_REVIEW.
+    customer_response: CustomerResponse | None = None
+    # Where the case came from: a PDF upload, a text message, or a demo run.
+    source_channel: Literal["upload", "message", "demo"] | None = None
+    # The Mock Bank's own record of the payment for this case. Written by the
+    # orchestrator; the request id is what agents pass to the bank tools.
+    payment_request_id: str | None = None
+    bank_status: str | None = None
+    settlement_reference: str | None = None
 
-    def add_audit(self, actor: AgentId, action: str, detail: str, status_after: str | None = None) -> None:
+    def add_audit(
+        self,
+        actor: AgentId,
+        action: str,
+        detail: str,
+        status_after: str | None = None,
+        actor_account_id: str | None = None,
+    ) -> None:
         self.audit.append(
             AuditEntry(
                 actor=actor,
@@ -345,6 +385,7 @@ class WorkflowCase(WorkflowModel):
                 detail=detail,
                 status_before=self.status.value,
                 status_after=status_after or self.status.value,
+                actor_account_id=actor_account_id,
             )
         )
         self.updated_at = utc_now()
@@ -387,3 +428,17 @@ class CaseSummary(WorkflowModel):
     next_action: str | None = None
     owner_account_id: str | None = None
 
+
+
+class WorkflowCaseView(WorkflowCase):
+    """A case as returned by GET /workflow/cases/{id}, with who may approve it.
+
+    ``approval_policy`` and the triage fields are optional so older clients that
+    ignore them keep working. ``why``, ``problems`` and ``next_action`` are the
+    same values the case list carries (``summarise_for_human``).
+    """
+
+    approval_policy: dict[str, Any] | None = None
+    why: str | None = None
+    problems: list[str] = Field(default_factory=list)
+    next_action: str | None = None

@@ -382,7 +382,20 @@ class ReconciliationSpecialist:
         )
 
     def reconcile_payment(self, case: WorkflowCase) -> dict:
-        """Compare the expected payment with what the Mock Bank actually holds."""
+        """Compare the expected payment with what the Mock Bank actually holds.
+
+        When the case has a bank payment request, Agent 2 checks *that* request
+        through its restricted bank tools instead of scanning every expected
+        payment in the database. Two benefits follow: the verdict is about this
+        case (never another customer's invoice) and the evidence is the bank's
+        own settled debit+credit pair.
+        """
+
+        payment_id = getattr(case, "payment_request_id", None)
+        if payment_id:
+            scoped = self._scoped_reconciliation(case, payment_id)
+            if scoped is not None:
+                return scoped
 
         from .bank_reconciliation import ReconciliationService
 
@@ -390,6 +403,87 @@ class ReconciliationSpecialist:
         recommendation = service.recommendation()
         recommendation["case_id"] = case.case_id
         return recommendation
+
+    def _scoped_reconciliation(self, case: WorkflowCase, payment_id: str) -> dict | None:
+        """Agent 2's verdict for this case's own payment request."""
+
+        try:
+            from .bank_tools import AgentBankTools, BankToolError, CaseContext
+
+            tools = AgentBankTools(self.repository.path)
+            context = CaseContext(
+                agent_id=AgentId.agent_2.value,
+                case_id=case.case_id,
+                customer_id=case.owner_account_id,
+                invoice_id=case.invoice_number,
+            )
+            evidence = tools.get_reconciliation_evidence(payment_id, context)
+        except BankToolError:
+            # The request is not visible to this case: fall back rather than
+            # claiming a verdict the agent may not have looked at.
+            return None
+        except Exception:  # noqa: BLE001 - never break a case on evidence lookup
+            return None
+
+        expected = evidence["expected"]
+        settled = evidence["settled"]
+        expected_minor = int(Decimal(str(expected["amount"])) * 100)
+        settled_minor = int(Decimal(str(settled["amount"])) * 100)
+        # The bank's own settled pair already proves the reference and currency,
+        # so identity is read from the bank's answer rather than re-guessed.
+        reference_ok = bool(settled.get("reference"))
+        currency_ok = (settled.get("currency") or "").upper() == (expected.get("currency") or "").upper()
+
+        if settled["verified"] and settled_minor == expected_minor and currency_ok:
+            verdict = "MATCHED"
+            summary = (
+                f"Bank reconciliation matched: {settled['amount']} {settled['currency']} settled under "
+                f"{settled.get('reference')}."
+            )
+            independent = True
+        elif settled_minor == 0:
+            verdict = "MISSING_PAYMENT"
+            summary = "No settled bank entry exists for this payment request."
+            independent = False
+        elif settled_minor < expected_minor:
+            verdict = "PARTIAL_PAYMENT"
+            summary = (
+                f"The bank settled {settled['amount']} {settled['currency']} of the expected "
+                f"{expected['amount']}, leaving a shortfall."
+            )
+            independent = False
+        elif settled_minor > expected_minor:
+            verdict = "OVERPAYMENT"
+            summary = (
+                f"The bank settled {settled['amount']} {settled['currency']} against an expected "
+                f"{expected['amount']}, so more was paid than approved."
+            )
+            independent = False
+        elif not currency_ok:
+            verdict = "CURRENCY_MISMATCH"
+            summary = (
+                f"The payment was expected in {expected['currency']} but settled in "
+                f"{settled['currency']}."
+            )
+            independent = False
+        else:
+            verdict = "NEEDS_HUMAN_REVIEW"
+            summary = "The settled entries do not corroborate the approved payment."
+            independent = False
+
+        return {
+            "case_id": case.case_id,
+            "payment_id": payment_id,
+            "verdict": verdict,
+            "matched_reference": settled.get("reference"),
+            "expected_amount": expected["amount"],
+            "settled_amount": settled["amount"],
+            "currency": expected["currency"],
+            "reference_ok": reference_ok,
+            "independent_evidence": independent,
+            "summary": summary,
+            "evidence": evidence,
+        }
 
     def verify_settlement(self, case: WorkflowCase) -> AgentReport:
         """Reconcile a payment Agent 5 executed against bank evidence.

@@ -99,7 +99,9 @@ def summarise_for_human(case: WorkflowCase) -> tuple[str, list[str], str]:
     # 4. Status-specific guidance.
     if case.status == CaseStatus.awaiting_approval:
         why = why or "The invoice is valid and needs a human to approve payment."
-        next_action = next_action or (
+        # Authoritative for this status: Agent 1 has already reported (its
+        # summary stays in ``why``), and the only next step is the decision.
+        next_action = (
             f"Approve {case.amount} {case.currency or ''} to {case.vendor_name or 'the vendor'}, "
             f"or reject it."
         ).strip()
@@ -319,6 +321,20 @@ class WorkflowRepository:
         finally:
             conn.close()
         return WorkflowCase.model_validate_json(row["case_json"]) if row else None
+
+    def list_full_cases(self, limit: int | None = None) -> list[WorkflowCase]:
+        """Most recently updated cases in full, for the admin views (all by default)."""
+
+        # shortcut: loads full case JSON per request; add aggregate queries if case counts grow large.
+        conn = self._connect()
+        try:
+            rows = conn.execute(
+                "SELECT case_json FROM workflow_cases ORDER BY updated_at DESC LIMIT ?",
+                (-1 if limit is None else limit,),
+            ).fetchall()
+        finally:
+            conn.close()
+        return [WorkflowCase.model_validate_json(row["case_json"]) for row in rows]
 
     def list_cases(self, limit: int = 50) -> list[CaseSummary]:
         conn = self._connect()

@@ -45,6 +45,23 @@ def _money(value: Decimal | None, currency: str | None = None) -> str:
     return f"{value:.2f} {currency or ''}".strip()
 
 
+def _same_amount_and_party(value, counterparty, amount, parties) -> bool:
+    """An unlabelled bank row matches only on the same amount with a party to the invoice.
+
+    ``parties`` is (vendor, customer): stored rows record either the payee or
+    the payer as the counterparty of a credit.
+    """
+
+    wanted = {normalize_name(p) for p in parties if p} - {""}
+    if value in (None, "") or amount is None or not wanted or not counterparty:
+        return False
+    try:
+        same_amount = abs(Decimal(str(value)) - amount) <= Decimal("0.005")
+    except Exception:  # noqa: BLE001 - untrusted stored value
+        return False
+    return same_amount and normalize_name(counterparty) in wanted
+
+
 class DuplicateInvestigator:
     """Agent 1: investigate duplicate invoices and duplicate payments."""
 
@@ -82,17 +99,30 @@ class DuplicateInvestigator:
         )
         return self.to_agent_report(investigation, case)
 
-    def _bank_evidence(self, amount, invoice_number):
-        """Synthetic bank transactions from every ledger in the system.
+    def _bank_evidence(self, amount, invoice_number, parties=(), references=()):
+        """Synthetic bank transactions, from every ledger, that belong to this invoice.
 
         The Mock Bank keeps its own ledger and the importer keeps imported
-        statements; both are evidence of money received.
+        statements; both are evidence of money received. A row belongs to the
+        invoice when it names the invoice, carries a payment reference known for
+        it, or (for a row with no invoice label) has the same amount and a
+        counterparty that is the invoice's vendor or customer. Counting every credit in the bank made
+        unrelated payments look like this invoice being paid.
         """
 
         from .schemas import SyntheticTransaction
 
         found: list[SyntheticTransaction] = []
         seen: set[str] = set()
+        wanted_number = normalize_invoice_number(invoice_number)
+        known_refs = {r.casefold() for r in references if r}
+
+        def belongs(label, reference, value, counterparty) -> bool:
+            if reference and reference.casefold() in known_refs:
+                return True
+            if label:
+                return bool(wanted_number) and wanted_number in normalize_invoice_number(label)
+            return _same_amount_and_party(value, counterparty, amount, parties)
 
         try:
             from .mock_bank import MockBank
@@ -107,6 +137,13 @@ class DuplicateInvestigator:
 
             for entry in MockBank(self.repository.path).ledger():
                 if entry["direction"] != "credit":
+                    continue
+                if not belongs(
+                    entry.get("invoice_number"),
+                    entry["payment_reference"],
+                    entry.get("received_amount") or entry["amount"],
+                    entry["counterparty"] or entry.get("vendor_name"),
+                ):
                     continue
                 txn = SyntheticTransaction(
                     transaction_id=entry["entry_id"],
@@ -133,6 +170,13 @@ class DuplicateInvestigator:
             from .bank_importer import BankTransactionStore
 
             for row in BankTransactionStore(self.repository.path).list_transactions():
+                # Statement rows have no invoice column; the description may name it.
+                described = f"{row.get('description') or ''} {row['payment_reference'] or ''}"
+                if not (
+                    (wanted_number and wanted_number in normalize_invoice_number(described))
+                    or belongs(None, row["payment_reference"], row["amount"], row["counterparty"])
+                ):
+                    continue
                 txn = SyntheticTransaction(
                     transaction_id=row["row_id"],
                     reference=row["payment_reference"],
@@ -172,7 +216,12 @@ class DuplicateInvestigator:
 
         # --- Checks A and B: compare against recorded invoices --------------
         history_available = self.history.available()
-        records = self.history.list_records(customer=customer) if history_available else []
+        # Agent 3 saves the analysis before routing, so exclude the document itself.
+        records = (
+            self.history.list_records(customer=customer, exclude_record_id=analysis.record_id)
+            if history_available
+            else []
+        )
         by_record = {record.record_id: record for record in records}
 
         candidates = [
@@ -246,10 +295,18 @@ class DuplicateInvestigator:
         except Exception:  # noqa: BLE001 - never break investigation on this
             pass
 
-        transactions = self._bank_evidence(amount, invoice_number)
-        if amount is not None:
-            transactions += self.repository.find_bank_transactions(amount=amount)
         claim = analysis.financial_information.payment_claim
+        references = [a.get("provider_reference") for a in payment_attempts]
+        if claim is not None and claim.reference:
+            references.append(claim.reference)
+        parties = (vendor, customer)
+        transactions = self._bank_evidence(amount, invoice_number, parties, references)
+        if amount is not None:
+            # Legacy rows carry no invoice number: same amount AND a party to the invoice.
+            transactions += [
+                txn for txn in self.repository.find_bank_transactions(amount=amount)
+                if _same_amount_and_party(txn.amount, txn.counterparty, amount, parties)
+            ]
         if claim is not None and claim.reference:
             transactions += self.repository.find_bank_transactions(reference=claim.reference)
         unique_txns, seen_txn = [], set()

@@ -58,6 +58,8 @@ def _isolate_repository_path(monkeypatch: pytest.MonkeyPatch) -> None:
     isolated = SCRATCH_ROOT / f"db-{uuid4().hex[:10]}.db"
     monkeypatch.setenv("AGENT3_DB_PATH", str(isolated))
     monkeypatch.delenv("RUN_LIVE_LLM_TEST", raising=False)
+    # A developer's .env may enable demo accounts; tests start with none.
+    monkeypatch.delenv("GHOSTLEDGER_DEMO_ACCOUNTS", raising=False)
     # Each test starts with a fresh synthetic provider so one test's payment
     # outcomes never leak into another.
     from workflow.payment_provider import reset_provider

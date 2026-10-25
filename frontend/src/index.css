@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+@theme {
+  --color-navy: #0b1f4b;
+  --color-ocean: #1f6feb;
+  --color-sky: #8ec5ff;
+  --color-foam: #eaf3ff;
+  --font-display: "Nunito", ui-rounded, "Segoe UI", system-ui, sans-serif;
+  --font-sans: "Inter", system-ui, "Segoe UI", Roboto, sans-serif;
+  /* Nothing on screen is smaller than 13px. */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.25rem;
+}
+
+body {
+  @apply bg-foam text-navy font-sans text-[15px] dark:bg-[#07142f] dark:text-slate-100;
+}
+
+h1, h2, h3 {
+  @apply font-display font-extrabold;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-ocean);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@keyframes ghost-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes ledger-flip {
+  0%, 100% { transform: scaleX(1); }
+  50% { transform: scaleX(-1); }
+}
+.ghost-float { animation: ghost-float 3.2s ease-in-out infinite; }
+.ledger-flip { animation: ledger-flip 0.9s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ghost-float, .ledger-flip { animation: none; }
+}

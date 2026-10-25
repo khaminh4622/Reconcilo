@@ -211,6 +211,8 @@ PRIMARY_AGENT_RULES: dict[PrimaryProblem, RecommendedAgent] = {
     PrimaryProblem.duplicate_invoice: RecommendedAgent.agent_1,
     PrimaryProblem.duplicate_payment: RecommendedAgent.agent_1,
     PrimaryProblem.bank_reconciliation: RecommendedAgent.agent_2,
+    # The prompt never offers this value, but the enum accepts it from a model.
+    PrimaryProblem.payment_status_dispute: RecommendedAgent.agent_2,
     PrimaryProblem.payment_failure: RecommendedAgent.agent_4,
     # A payment request must never execute without a human saying yes.
     PrimaryProblem.payment_request: RecommendedAgent.human_approval,
@@ -550,7 +552,7 @@ def decide_routing(
     elif primary == PrimaryProblem.duplicate_invoice:
         reason = "The customer reports being billed more than once for the same charges."
         reason += " The duplicate is alleged, not confirmed."
-    elif primary == PrimaryProblem.bank_reconciliation:
+    elif primary in {PrimaryProblem.bank_reconciliation, PrimaryProblem.payment_status_dispute}:
         pieces = []
         if payment_claim.requires_reconciliation:
             pieces.append(

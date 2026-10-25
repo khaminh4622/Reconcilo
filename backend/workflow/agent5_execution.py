@@ -199,7 +199,17 @@ class PaymentExecutionAgent:
         attempt = claim.attempt
 
         # --- 5. Ask the Mock Bank to move the money ------------------------
-        instruction = self.bank.submit_instruction(
+        # ``self.bank`` may be the raw ledger (the orchestrator binds Agent 5 to
+        # the read-only ledger) or the account-aware BankService. Either way this
+        # legacy execution path still requires a recorded approval and still
+        # posts its rows through the bank, never directly.
+        submit = getattr(self.bank, "submit_instruction", None)
+        if submit is None:
+            raise RuntimeError(
+                "Agent 5 has no execution path: the bank processes authorised payment "
+                "requests through the orchestrator."
+            )
+        instruction = submit(
             idempotency_key=key,
             amount=amount or Decimal("0"),
             currency=currency or "USD",

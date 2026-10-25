@@ -104,6 +104,32 @@ class OpenAICompatibleClient:
             raise ExtractionError("The configured extraction provider returned an empty result.")
         return content
 
+    def complete_text(self, system: str, user: str) -> str:
+        """Ask for plain prose, without the extraction JSON response format.
+
+        The extraction call above is deliberately constrained to JSON. Agent 4's
+        support chat needs customer-facing language, so it uses this unconstrained
+        entry point instead of asking a JSON-only provider for prose.
+        """
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                temperature=0,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+            )
+            self.last_response_id = getattr(response, "id", None)
+            self.last_usage = _usage_summary(getattr(response, "usage", None))
+            content = response.choices[0].message.content
+        except Exception as exc:  # API errors must not leak case facts
+            raise ExtractionError(_provider_error(exc)) from exc
+        if not content or not content.strip():
+            raise ExtractionError("The configured support provider returned an empty result.")
+        return content
+
 
 class OllamaNativeClient:
     """Client for a local Ollama server, using its native ``/api/chat`` API.
@@ -173,6 +199,31 @@ class OllamaNativeClient:
         if not content.strip():
             # Reasoning models can still report an empty answer when the limit
             # is hit. Say so precisely instead of reporting a generic failure.
+            reason = data.get("done_reason")
+            detail = " (the model used its whole output budget before answering)" if reason == "length" else ""
+            raise ExtractionError(f"The local Ollama model returned an empty result{detail}.")
+        return content
+
+    def complete_text(self, system: str, user: str) -> str:
+        """Ask for plain prose without Ollama's JSON ``format`` constraint."""
+
+        payload = {
+            "model": self.model,
+            "stream": False,
+            "think": False,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "options": {"temperature": 0, "num_predict": self.num_predict},
+        }
+        try:
+            data = self._post("/api/chat", payload)
+        except Exception as exc:  # network/HTTP errors must not leak case facts
+            raise ExtractionError(_provider_error(exc)) from exc
+        message = data.get("message") or {}
+        content = message.get("content") or ""
+        if not content.strip():
             reason = data.get("done_reason")
             detail = " (the model used its whole output budget before answering)" if reason == "length" else ""
             raise ExtractionError(f"The local Ollama model returned an empty result{detail}.")

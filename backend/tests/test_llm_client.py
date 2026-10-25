@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
@@ -54,6 +54,9 @@ DOCUMENT = (
 
 
 class _Handler(BaseHTTPRequestHandler):
+    # HTTP/1.0 closes the socket right after replying, which on Windows can
+    # reset the connection before the client reads the response (WinError 10054).
+    protocol_version = "HTTP/1.1"
     captured: dict = {}
     status = 200
     body: dict | None = None
@@ -97,7 +100,9 @@ def server():
     _Handler.captured = {}
     _Handler.status = 200
     _Handler.body = None
-    httpd = HTTPServer(("127.0.0.1", 0), _Handler)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    # Kept-alive connections live in daemon threads, so shutdown never waits on them.
+    httpd.daemon_threads = True
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:

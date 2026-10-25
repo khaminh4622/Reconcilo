@@ -1,87 +1,350 @@
-# GhostLedger - five-agent autonomous finance workflow
+# GhostLedger - AI agents for invoice payments and customer support
 
-Agent 3 is always the entry point. It reads a customer PDF, validates the
-financial facts, classifies the customer's intent, and hands the case to the
-central orchestrator, which dispatches one specialist and keeps an audit trail.
+A customer uploads a PDF **or sends a message**. Agent 3 reads it, extracts and
+validates the facts, checks the customer's identity against stored records,
+identifies the intent, and hands the case to the central orchestrator. The
+orchestrator runs the specialists, enforces the bank-side approval gate, and
+keeps a full audit trail. Agent 5 closes every case with a plain-language answer.
 
+Everything is synthetic: the Mock Bank, its ledger and every payment are fictional.
+
+## The real flow
+
+```mermaid
+flowchart TD
+    U["Customer: upload PDF<br/>POST /workflow/cases"] --> A3
+    M["Customer: text message<br/>POST /workflow/cases/message"] --> A3
+    D["Demo admin: fixture scenario<br/>POST /demo/scenarios/{name}/run"] --> A3
+    A3["Agent 3: read, extract, validate,<br/>verify identity, identify intent"] --> R{Orchestrator routes}
+
+    R -->|"Path A: pay invoice"| A1["Agent 1: does the invoice exist,<br/>has it been paid, duplicates?"]
+    A1 -->|"already paid / pending / duplicate payment"| BLK["REQUIRES_REVIEW<br/>(pending_reason says why)"]
+    A1 -->|"no objection"| HA["Human approval<br/>BANK_ADMIN or DEMO_ADMIN, never the requester"]
+    HA -->|reject| A5R["Agent 5: rejection explained"] --> FAILED[FAILED]
+    HA -->|approve| SIM["Payment simulator<br/>(idempotency key, never retried)"]
+    SIM -->|success| A2["Agent 2: bank reconciliation"]
+    SIM -->|failure| A4["Agent 4: payment exception"]
+    A2 --> A5A["Agent 5: final confirmation"]
+    A4 --> A5A
+    A5A --> DONE["COMPLETED / PENDING / REQUIRES_REVIEW"]
+
+    R -->|"Path B: duplicate invoice / double payment"| B1["Agent 1"]
+    R -->|"Path B: payment status / missing money"| B2["Agent 2"]
+    R -->|"Path B: rejected payment / exception"| B4["Agent 4"]
+    R -->|"unclear, contradictory or incomplete"| HR["Human review"]
+    B1 --> A5B["Agent 5: final explanation"]
+    B2 --> A5B
+    B4 --> A5B
+    HR --> A5B
+    BLK --> A5B
+    A5B --> END["COMPLETED / REQUIRES_REVIEW<br/>+ customer_response"]
 ```
-PDF -> Agent 3 (intake + validation) -> Orchestrator -> specialist agent
-                                                          |
-                                   Human approval (payments only) -> Agent 5
-                                                                       | failure
-                                                                    Agent 4
-```
+
+Agent 1 always reports **before** a payment case can reach `AWAITING_APPROVAL`,
+so the approver decides with its result in hand. A repeat submission of an
+invoice that was never paid stays approvable: it reuses the original obligation
+and the idempotency key lets it be paid exactly once.
 
 ## The agents
 
 | Agent | Module | Responsibility |
 | --- | --- | --- |
-| **Agent 1** | `workflow/agent1_duplicates.py` | Investigations of suspected duplicate invoices and duplicate payments. Compares invoice numbers, parties, dates and amounts; counts payment references; checks prior payments. Never refunds. |
-| **Agent 2** | `workflow/agent2_reconciliation.py` | Reconciles reported payments against synthetic bank records by reference, then amount + counterparty. A payment is never marked verified without a matching settled transaction. |
-| **Agent 3** | `agent3/` | Financial Intake & Verification. LLM extraction, `Decimal` validation, intent classification, routing recommendation. |
-| **Agent 4** | `workflow/agent4_exceptions.py` | Diagnoses failed and pending payments, recommends resolution, escalates to humans. Never retries. |
-| **Agent 5** | `workflow/agent5_execution.py` | Synthetic payment execution. Requires a matching human approval, blocks duplicates with a unique idempotency key, never retries a pending or failed attempt. |
+| **Agent 1** | `workflow/agent1_duplicates.py` | Duplicate invoices and duplicate payments: compares invoice numbers, parties, dates and amounts; checks prior payments. Runs before approval on Path A. Never refunds. |
+| **Agent 2** | `workflow/agent2_reconciliation.py` | Reconciles payments against the Mock Bank ledger. A payment is never verified without a matching settled transaction. |
+| **Agent 3** | `agent3/` | Intake and verification: LLM extraction, `Decimal` validation, identity check against stored records, intent, routing recommendation. |
+| **Agent 4** | `workflow/agent4_exceptions.py` | Diagnoses failed, rejected and unresolved payments and recommends a resolution. Never retries. |
+| **Agent 5** | `workflow/agent5_confirmation.py` | Final confirmation and customer answer on every path. Confirms a payment only after Agent 2 verified it. Moves no money. |
+| Payment simulator | `workflow/payment_simulator.py` | The only component that moves (fictional) money, after a matching approval. |
 
-All agents are independent modules. None calls another directly - the
-orchestrator (`workflow/orchestrator.py`) coordinates every handoff using typed
-`AgentReport` objects.
+None of the agents calls another directly; `workflow/orchestrator.py`
+coordinates every handoff with typed `AgentReport` objects.
 
 ## Routing
 
-| Intent | Primary agent |
+| Intent | Path |
 | --- | --- |
-| `new_payment_request` | Human approval, then Agent 5 |
-| `duplicate_invoice` | Agent 1 |
-| `duplicate_payment` | Agent 1 (Agent 2 supporting) |
-| `bank_reconciliation` / `payment_status_dispute` | Agent 2 |
-| `payment_failure` | Agent 4 |
-| `unknown` | Human review |
+| `new_payment_request` | Agent 1 -> human approval -> simulator -> Agent 2 or Agent 4 -> Agent 5 |
+| `duplicate_invoice` / `duplicate_payment` | Agent 1 (Agent 2 when settlements need verifying) -> Agent 5 |
+| `bank_reconciliation` / `payment_status_dispute` | Agent 2 (Agent 4 if unresolved) -> Agent 5 |
+| `payment_failure` | Agent 4 -> Agent 5 |
+| `unknown` | Human review -> Agent 5 |
 
-The LLM classifies the intent; Python validates it. A new payment goes to human
-review when financial consistency failed, required fields are missing, customer
-details contradict stored records, or the document contains contradictions. An
-*unverified payment* alone does not block a new payment request - an unpaid
-invoice always has none, and the human approval step covers that risk.
+The LLM classifies the intent; Python validates it. A payment request goes to
+human review when financial consistency failed, required fields are missing,
+customer details contradict stored records, the document contains
+contradictions, or it gives no amount, currency, payee or invoice number.
+
+A **text message** is held to a stricter bar: it must contain an invoice number
+(an identifier the customer did not write is discarded, never used) and a clear
+request. A message only becomes a payment when it actually asks for one and
+states the amount, currency and vendor. Otherwise it goes to human review with a
+`pending_reason` naming what is missing.
 
 ## Safety properties
 
-- Agent 5 will not execute without an approval record.
-- The approval binds to invoice number, payee, amount and currency; any mismatch blocks execution.
-- Payment attempts are keyed by `sha256(invoice|payee|amount|currency)` and that key is `UNIQUE` in SQLite, so the same obligation cannot be paid twice, even from a different case.
-- A `PENDING` attempt blocks further execution until it is investigated.
-- `FAILED` and `PENDING` are never recorded as completed transfers.
-- Agent 4 never retries a payment. Agent 1 never issues a refund.
-- Every state change is written to the case audit trail with actor and timestamps.
+- Only a `BANK_ADMIN` or `DEMO_ADMIN` can approve or reject, never the account that requested the payment. The approver is the signed-in account, recorded in `approval.approved_by_account_id` and in the audit entry's `actor_account_id`; any `approved_by` in the request body is ignored.
+- Nothing executes without an approval record bound to invoice number, payee, amount and currency; any mismatch blocks execution.
+- Agent 1 only counts bank evidence that belongs to the invoice: a row naming the invoice, a payment reference known for it, or (for a row with no invoice label) the same amount with the invoice's vendor or customer as counterparty. A first-time payment request is held for review when such a settled payment already exists.
+- Agent 1 reports before approval. `approve()` re-checks as defence in depth: a case without an Agent 1 report gets the full check, and every case is refused if a settled or pending attempt for the invoice appeared since.
+- Payment attempts are keyed by `sha256(invoice|payee|amount|currency)`, `UNIQUE` in SQLite, so one obligation cannot be paid twice, even from different cases.
+- A `PENDING` attempt blocks further execution. `FAILED` and `PENDING` are never recorded as completed. Nothing is retried automatically.
+- Every case is owned by one account; customers see only their own cases, payments and history. The Mock Bank ledger and all cross-account views are admin-only.
+- Every state change is in the case audit trail with actor, timestamps and, for human actions, the account id.
+- Agent 5's `customer_response` is built from deterministic facts. An optional model may reword it, but any wording that claims a settlement that was not verified is discarded.
 
-## Workflow API
+## Roles and routes
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `POST` | `/workflow/cases` | Upload a PDF; Agent 3 analyses and the orchestrator routes |
-| `GET` | `/workflow/cases` | List recent cases |
-| `GET` | `/workflow/cases/{id}` | Full case, reports, runs and audit |
-| `POST` | `/workflow/cases/{id}/approve` | Record human approval, then Agent 5 executes |
-| `POST` | `/workflow/cases/{id}/reject` | Reject a case awaiting approval |
-| `POST` | `/workflow/cases/{id}/execute` | Re-attempt an approved case (idempotency still applies) |
-| `GET` | `/workflow/bank-transactions` | Synthetic bank records used by Agent 2 |
+| Route | Anonymous | CUSTOMER | BANK_ADMIN | DEMO_ADMIN |
+| --- | --- | --- | --- | --- |
+| `GET /`, `GET /health`, `GET /workflow/agents` | yes | yes | yes | yes |
+| `POST /auth/signup`, `POST /auth/signin`, `POST /auth/signout` | yes | yes | yes | yes |
+| `GET /auth/me` | 401 | own history | all cases | all cases |
+| `POST /workflow/cases` (upload) | 401 | yes | yes | yes |
+| `POST /workflow/cases/message` | 401 | yes | 403 | 403 |
+| `GET /workflow/cases` | `[]` | own | all | all |
+| `GET /workflow/cases/{id}` (+ `/investigation`, `/receipt`) | 401 | own (else 404) | yes | yes |
+| `POST /workflow/cases/{id}/execute` | 401 | own (else 404) | yes | yes |
+| `POST /workflow/cases/{id}/approve`, `/reject` | 401 | 403 (404 if not theirs) | yes, not own request | yes, not own request |
+| `GET /workflow/approvals` | 401 | 403 | yes | yes |
+| `GET /workflow/invoices/{n}/payments` | 401 | attempts on own cases | all | all |
+| `GET /workflow/invoice-history` | 401 | invoices on own cases | all | all |
+| `GET /admin/payment-failures`, `/admin/activity`, `/admin/customers`, `/admin/overview` | 401 | 403 | yes | yes |
+| `GET /demo/scenarios`, `POST /demo/scenarios/{name}/run` | 401 | 403 | 403 | yes |
+| `GET /bank/ledger`, `/bank/ledger/{id}`, `/bank/transactions`, `POST /bank/reconcile`, `GET /workflow/bank-transactions` | 401 | 403 | yes | yes |
+| `GET /customers`, `/customers/{id}`, `/agent3/results/{id}`, `/agent3/synthetic/*` | 401 | 403 | yes | yes |
+| `POST /agent3/analyze` | yes | yes | yes | yes |
+| `POST /bank/import` | developer key | developer key | developer key | developer key |
+| `GET /developer/failure-scenarios`, `POST /developer/simulate-failure` | local requests only | same | same | same |
 
-The original `/agent3/analyze` and every earlier endpoint are unchanged.
+`/auth/signup` always creates a `CUSTOMER`; a `role` in the body is ignored.
+
+## New and changed endpoints
+
+The session token goes in `Authorization: Bearer <token>`.
+
+### `POST /workflow/cases/message` (customer)
+
+```json
+{ "message": "Please pay invoice INV-7781 from Northstar Office Supplies LLC for 1,280.00 USD." }
+```
+
+`201` with the full case, run through the same Agent 3 analysis, ownership and
+routing as an upload (`"source_channel": "message"`). An empty message is `400`;
+over `MAX_MESSAGE_CHARS` (default 20,000) is `413`. An incomplete message:
+
+```json
+{
+  "status": "REQUIRES_REVIEW",
+  "pending_reason": "The message does not include an invoice number or a clear description of the problem (for example: pay an invoice, a payment that failed, or a payment you cannot see).",
+  "customer_response": { "outcome": "NEEDS_REVIEW", "next_steps": ["Tell us the invoice number.", "A member of our team will review your request."] }
+}
+```
+
+### `POST /workflow/cases/{id}/approve` and `/reject` (bank side)
+
+Body (all optional): approve `{"note": "...", "simulate": "SUCCESS|FAILED|PENDING|PARTIAL|MISSING_SETTLEMENT"}`,
+reject `{"reason": "..."}`. A customer gets:
+
+```json
+{ "detail": "Customers can request payments but cannot approve them. A bank administrator must approve or reject this payment." }
+```
+
+On success the approval records the signed-in account:
+
+```json
+"approval": {
+  "approved_by": "Bank Administrator (18394418-793c-4854-9a73-0c8449731145)",
+  "approved_by_account_id": "18394418-793c-4854-9a73-0c8449731145",
+  "invoice_number": "INV-7781", "payee": "Northstar Office Supplies LLC",
+  "amount": "1280.00", "currency": "USD", "note": "Checked vendor bank details"
+}
+```
+
+### `GET /workflow/approvals` (admin)
+
+```json
+{
+  "count": 1,
+  "approvals": [{
+    "case_id": "d7094325-...", "created_at": "2026-10-25T01:59:49+00:00",
+    "requester": { "account_id": "6ac3896e-...", "display_name": "Demo Customer A", "email": "customer.a@ghostledger.test" },
+    "invoice_number": "INV-7781", "vendor": "Northstar Office Supplies LLC", "amount": "1280.00", "currency": "USD",
+    "agent1": {
+      "status": "INSUFFICIENT_INFORMATION",
+      "summary": "No comparison records are available, so Agent 1 cannot say whether this invoice is unique.",
+      "previous_payment_status": null, "needs_human_judgement": true,
+      "recommended_next_action": "...", "records_compared": 0, "completed_at": "2026-10-25T01:59:49+00:00"
+    }
+  }]
+}
+```
+
+### `GET /workflow/cases/{id}`: new optional fields
+
+```json
+"approval_policy": {
+  "required": true,
+  "eligible_roles": ["BANK_ADMIN", "DEMO_ADMIN"],
+  "requester": { "account_id": "6ac3896e-...", "display_name": "Demo Customer A", "email": "customer.a@ghostledger.test" },
+  "blocked": [
+    { "user": "Demo Customer A", "reason": "The account that requested a payment cannot approve it." },
+    { "user": "CUSTOMER", "reason": "Customers can request payments but cannot approve them." }
+  ]
+},
+"customer_response": {
+  "case_status": "COMPLETED", "outcome": "PAID", "headline": "Payment confirmed",
+  "answer": "Your payment of 1,280.00 USD for invoice INV-7781 to Northstar Office Supplies LLC is confirmed: the bank settled it and we matched it to your invoice. Receipt eb24c32e.",
+  "next_steps": ["No action is needed.", "Keep the receipt for your records."],
+  "payment_settled": true, "missing_information": [], "generated_by": "deterministic"
+},
+"source_channel": "message"
+```
+
+The case also carries `why`, `problems` and `next_action`: the same triage
+values as the case list, so a client can explain a case before Agent 5 answers.
+Receipts in `GET /auth/me` now include their `case_id`.
+
+`customer_response` is set whenever a case ends (`COMPLETED`, `FAILED`,
+`REQUIRES_REVIEW`, and `PENDING`). Outcomes: `PAID`, `PAYMENT_FOUND`,
+`RESOLVED`, `PAYMENT_PENDING`, `REJECTED`, `PAYMENT_FAILED`,
+`BLOCKED_DUPLICATE`, `DUPLICATE_CHECKED`, `FAILURE_CHECKED`,
+`PAYMENT_NOT_FOUND`, `PAYMENT_DETAILS_NEEDED`, `NEEDS_REVIEW`. Only `PAID` and
+`PAYMENT_FOUND` have `payment_settled: true`. Audit entries carry an optional
+`actor_account_id`.
+
+### `GET /admin/payment-failures`
+
+```json
+{ "simulated": true, "count": 2, "failures": [{
+  "source": "ledger", "entry_id": "BK-AC8EBD9A039D44",
+  "failure_code": "PAYMENT_REJECTED", "failure_reason": "The receiving bank rejected the transaction.",
+  "invoice_number": "INV-7790", "amount": "2015.00", "currency": "USD", "payment_reference": "MB-3BAFCD7B348E",
+  "at": "2026-10-25T01:59:51+00:00", "case_id": "02160480-...", "case_status": "REQUIRES_REVIEW",
+  "customer": { "account_id": "6ac3896e-...", "display_name": "Demo Customer A", "name_on_document": "Blue Harbor Technologies Inc." }
+}]}
+```
+
+Each failure appears once per source: the payment attempt (`"source": "payment_attempt"`) and the ledger row.
+
+### `GET /admin/activity?limit=50`
+
+Newest first across all cases (`limit` 1-500):
+
+```json
+{ "count": 1, "activity": [{
+  "at": "2026-10-25T01:59:51+00:00", "case_id": "02160480-...", "invoice_number": "INV-7790",
+  "customer": { "account_id": "6ac3896e-...", "display_name": "Demo Customer A", "name_on_document": "..." },
+  "actor": "human_approval", "actor_account_id": "18394418-...",
+  "action": "approved", "detail": "Bank Administrator (...) approved 2015.00 USD to ...", "status_after": "APPROVED"
+}]}
+```
+
+### `GET /admin/customers`
+
+```json
+{ "count": 1, "customers": [{
+  "account_id": "6ac3896e-...", "display_name": "Demo Customer A", "email": "customer.a@ghostledger.test",
+  "created_at": "2026-10-25T01:59:47+00:00", "case_count": 3, "last_activity": "2026-10-25T01:59:51+00:00"
+}]}
+```
+
+Never includes password hashes, salts or tokens.
+
+### `GET /admin/overview`
+
+```json
+{
+  "cases_total": 3,
+  "cases_by_status": { "COMPLETED": 1, "REQUIRES_REVIEW": 2 },
+  "cases_needing_a_person": 2,
+  "payments": { "settled": 1, "failed": 1, "pending": 0 },
+  "agent_runs": { "agent_1": 2, "agent_2": 1, "agent_3": 3, "agent_4": 1, "agent_5": 3,
+                  "human_approval": 2, "human_review": 2, "payment_simulator": 2 }
+}
+```
+
+`settled` counts attempts Agent 2 verified; a simulator success that is not yet
+verified counts as `pending`.
+
+### `GET /demo/scenarios` and `POST /demo/scenarios/{name}/run` (demo admin)
+
+```json
+{ "simulated": true, "scenarios": [{
+  "name": "normal_invoice.pdf",
+  "description": "A clean, internally consistent invoice (INV-2026-0441, 410.40 USD) to pay.",
+  "available": true,
+  "expected": { "route": "new_payment_request", "status": "REQUIRES_REVIEW",
+                "agents": ["agent_3", "agent_1", "agent_5", "human_review"], "outcome": "BLOCKED_DUPLICATE" }
+}]}
+```
+
+Run body (all optional): `{"customer_email": "customer.a@ghostledger.test"}` or
+`{"customer_account_id": "..."}` (defaults to the first customer account), and
+`{"mode": "scripted" | "live"}`. The response is the case. The fixture PDF goes
+through the real pipeline; in the default `scripted` mode the model's reading is
+a stored reply from `workflow/demo_scenarios.py`, labelled
+`analysis_source: "synthetic_fixture"` with `llm_call.invoked: false`. `live`
+uses the configured model (`409` if none). Each run is audited as `demo_run`
+with the demo admin's account id. `expected` is pinned by
+`tests/test_demo_scenarios.py` from a run on a fresh database. Outcomes on a
+database with earlier runs can differ. `normal_invoice.pdf` is blocked because
+the synthetic bank seed already holds a settled payment for INV-2026-0441.
+
+### Access fixes
+
+`POST /workflow/cases/{id}/execute` and `GET /workflow/invoices/{n}/payments`
+now need a signed-in account and are scoped to the owner (admins see all).
+`GET /customers`, `/customers/{id}`, `/agent3/results/{id}` and
+`/agent3/synthetic/*` are admin-only. `GET /workflow/invoice-history` scopes a
+customer by the invoices on their own cases, not by display name (which anyone
+can choose at signup).
+
+## Demo accounts
+
+Public signup only creates customers. Create the bank-side accounts with:
+
+```powershell
+cd backend
+$env:DEMO_ACCOUNT_PASSWORD = "choose-a-password"   # optional
+python -m tools.seed_demo_accounts                  # or: --db path\to\agent3.db
+```
+
+| Email | Role |
+| --- | --- |
+| `demo.admin@ghostledger.test` | `DEMO_ADMIN` |
+| `bank.admin@ghostledger.test` | `BANK_ADMIN` |
+| `customer.a@ghostledger.test` | `CUSTOMER` |
+| `customer.b@ghostledger.test` | `CUSTOMER` |
+
+Or let the backend do it: with `GHOSTLEDGER_DEMO_ACCOUNTS=1` in `.env` (already
+in `.env.example`), the same four accounts are created when the API starts, so a
+fresh clone can sign in without running the tool.
+
+Without `DEMO_ACCOUNT_PASSWORD` the local default `ghostledger-demo` is used and
+printed. Running it again changes nothing and never resets a password. It
+refuses to run when `GHOSTLEDGER_ENV=production`. The database is
+`AGENT3_DB_PATH` (default `data/agent3.db`), the same file the API uses.
 
 ## Case statuses
 
-`RECEIVED -> ANALYZING -> VALIDATING -> ROUTED -> INVESTIGATING ->
-AWAITING_APPROVAL -> APPROVED -> EXECUTING -> PENDING -> COMPLETED | FAILED |
-REQUIRES_REVIEW`
+`RECEIVED -> ANALYZING -> ROUTED -> INVESTIGATING -> AWAITING_APPROVAL ->
+APPROVED -> EXECUTING -> PENDING -> COMPLETED | FAILED | REQUIRES_REVIEW`
 
 ## Workflow tests
 
-`tests/test_workflow.py` covers every required scenario: valid new invoice;
-duplicate invoice; duplicate payment (Agent 1 then Agent 2); bank mismatch;
-failed payment to Agent 4; Agent 5 failure to Agent 4; missing information to
-human review; successful payment recorded; duplicate execution blocked;
-unapproved payment refused; approval/amount mismatch refused; pending payment not
-retried; Agent 3 always first; audit trail present; existing Agent 3 contract
-unchanged.
+`tests/test_diagram_conformance.py` turns the product diagram into acceptance
+tests over HTTP, one per path, asserting the exact order and status of every
+step: Path A success and payment failure, a duplicate invoice flagged before
+approval, a customer-reported duplicate invoice, a duplicate payment, a payment
+status dispute, a rejected payment, a text message, and human review; plus
+Agent 1 reporting before approval, customers unable to approve or see the
+ledger, and one customer unable to read another's case.
+
+Also: `test_agent1_before_approval.py`, `test_customer_response.py`,
+`test_bank_side_approval.py`, `test_message_cases.py`, `test_route_access.py`,
+`test_admin_endpoints.py`, `test_demo_scenarios.py`,
+`test_seed_demo_accounts.py`, and the earlier `test_workflow.py`,
+`test_workflow_architecture.py` and `test_agent_order.py`.
 
 # GhostLedger — Agent 3: Customer Document Understanding
 
@@ -199,11 +462,11 @@ state in its header pill.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `POST` | `/agent3/analyze` | Multipart upload, one PDF in field `file` |
-| `GET` | `/agent3/results/{document_id}` | Fetch a saved result by record or document ID |
-| `GET` | `/customers` | List the fictional reference records used for matching |
-| `GET` | `/customers/{customer_id}` | Fetch one reference record |
+| `GET` | `/agent3/results/{document_id}` | Fetch a saved result by record or document ID (admins only) |
+| `GET` | `/customers` | List the fictional reference records used for matching (admins only) |
+| `GET` | `/customers/{customer_id}` | Fetch one reference record (admins only) |
 | `GET` | `/health` | Live-model state, model name, reference-customer count |
-| `GET` | `/agent3/synthetic/*` | Development corpus and evaluation (not in the UI) |
+| `GET` | `/agent3/synthetic/*` | Development corpus and evaluation (not in the UI; admins only) |
 
 The synthetic corpus and its evaluation endpoint remain available for
 development. They never cause an unavailable live analysis to be presented as a
