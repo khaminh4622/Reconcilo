@@ -1,17 +1,35 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 84">
-  <rect width="320" height="84" fill="#F4F7F8"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="158" viewBox="0 0 320 84">
+  <style>
+    @keyframes logo-float {
+      0%, 100% { transform: translateY(0); opacity: 0.9; }
+      50% { transform: translateY(-4px); opacity: 0.84; }
+    }
+    .mark { animation: logo-float 3.6s ease-in-out infinite; }
+    @media (prefers-reduced-motion: reduce) {
+      .mark { animation: none; opacity: 0.88; }
+    }
+  </style>
+  <defs>
+    <filter id="coin-glow" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="1.8"/>
+    </filter>
+  </defs>
+  <rect width="320" height="84" fill="#071833"/>
   <g transform="translate(16 10)">
-    <circle cx="32" cy="32" r="29.2" fill="#071833"/>
-    <circle cx="32" cy="32" r="29.2" fill="none" stroke="#7ED9D2" stroke-width="1.6" opacity="0.9"/>
-    <circle cx="32" cy="32" r="24.2" fill="none" stroke="#7ED9D2" stroke-width="1.15" opacity="0.72"/>
-    <g fill="#F7FBFA">
-      <rect x="14.8" y="16.4" width="6.2" height="31.2" rx="1.2"/>
-      <path d="M26.2 31.6 36.6 47.2h-4.6L22.6 32.8z"/>
-      <rect x="39.2" y="36.4" width="3.5" height="11.2" rx="0.8"/>
-      <rect x="43.8" y="30.2" width="3.5" height="17.4" rx="0.8"/>
-      <rect x="48.4" y="23.2" width="3.5" height="24.4" rx="0.8"/>
+    <g class="mark">
+      <circle cx="32" cy="32" r="27.5" fill="#F7FBFA" opacity="0.28" filter="url(#coin-glow)"/>
+      <circle cx="32" cy="32" r="29.2" fill="#F7FBFA" fill-opacity="0.1"/>
+      <circle cx="32" cy="32" r="29.2" fill="none" stroke="#F7FBFA" stroke-width="1.7"/>
+      <circle cx="32" cy="32" r="24.2" fill="none" stroke="#F7FBFA" stroke-width="1.15" opacity="0.62"/>
+      <g fill="#F7FBFA">
+        <rect x="14.8" y="16.4" width="6.2" height="31.2" rx="1.2"/>
+        <path d="M26.2 31.6 36.6 47.2h-4.6L22.6 32.8z"/>
+        <rect x="39.2" y="36.4" width="3.5" height="11.2" rx="0.8"/>
+        <rect x="43.8" y="30.2" width="3.5" height="17.4" rx="0.8"/>
+        <rect x="48.4" y="23.2" width="3.5" height="24.4" rx="0.8"/>
+      </g>
+      <path d="M21.2 19.4h6.4c5.4 0 8.6 2.6 8.6 6.7s-3.2 6.7-8.6 6.7h-6.4" fill="none" stroke="#F7FBFA" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
     </g>
-    <path d="M21.2 19.4h6.4c5.4 0 8.6 2.6 8.6 6.7s-3.2 6.7-8.6 6.7h-6.4" fill="none" stroke="#F7FBFA" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
-  <text x="96" y="52" fill="#071833" font-family="Manrope, Avenir Next, Segoe UI, sans-serif" font-size="34" font-weight="700">Reconcilo</text>
+  <text x="96" y="52" fill="#FFFFFF" font-family="Manrope, Avenir Next, Segoe UI, sans-serif" font-size="34" font-weight="700">Reconcilo</text>
 </svg>

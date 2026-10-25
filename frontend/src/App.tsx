@@ -215,7 +215,7 @@ function Sidebar({
     <aside className={`fixed inset-y-0 left-0 z-40 flex w-[272px] flex-col bg-navy text-white transition-transform lg:static lg:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"}`}>
       <div className="px-5 pb-4 pt-6">
         <a href="#/" onClick={onNavigate} className="block w-fit">
-          <Logo tone="onDark" mark={40} />
+          <Logo tone="onDark" mark={40} float />
         </a>
         <p className="mt-2 text-xs text-sky/90">Simulated treasury</p>
       </div>

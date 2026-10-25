@@ -45,7 +45,7 @@ export default function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
       <section className="relative hidden overflow-hidden bg-navy px-12 py-14 text-white lg:flex lg:flex-col lg:justify-between">
         <div>
           <div>
-            <Logo tone="onDark" mark={52} />
+            <Logo tone="onDark" mark={52} float />
             <p className="mt-2 text-sm text-sky">Simulated treasury · human approval required</p>
           </div>
           <h1 className="mt-16 max-w-md font-display text-5xl font-medium leading-[1.05] text-white">
