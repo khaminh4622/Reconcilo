@@ -33,7 +33,7 @@ export function CaseView({ c }: { c: WorkflowCase }) {
       AGENT4_CASE_STATUSES.has(c.status));
 
   return (
-    <article className="mx-auto max-w-[760px] space-y-4">
+    <article className="rise mx-auto max-w-4xl space-y-4">
       <Answer c={c} isCustomer={isCustomer} />
 
       <Card>
@@ -121,24 +121,92 @@ export function Answer({ c, isCustomer }: { c: WorkflowCase; isCustomer: boolean
   );
 }
 
-export function Path({ c }: { c: Pick<WorkflowCase, "agent_runs"> }) {
+const STEP_ROLE: Record<string, string> = {
+  agent_3: "Verification. Agent 3 reads the request and checks the figures before anyone else runs.",
+  agent_1: "Duplicate detection. Agent 1 compares this invoice with earlier records.",
+  human_approval: "Bank approval. A person decides. No agent can approve this payment.",
+  payment_simulator: "Payment execution. The simulated bank acts only after a recorded approval.",
+  agent_5: "Payment execution. Agent 5 reports the outcome. It does not approve or move money on its own.",
+  agent_2: "Reconciliation. Agent 2 matches the payment against bank records.",
+  agent_4: "Exception handling. Agent 4 explains what the bank recorded. A retry still needs a fresh approval.",
+  human_review: "A person reviews this case before anything else happens.",
+  orchestrator: "The workflow coordinator. Agents do not call each other directly.",
+};
+
+export function Path({ c }: { c: Pick<WorkflowCase, "agent_runs" | "reports" | "approval" | "payment" | "reconciliation" | "analysis" | "status" | "pending_reason"> }) {
   const runs = visiblePath(c.agent_runs);
   return (
     <Card>
-      <h2 className="mb-3 text-base">Path</h2>
-      <ol className="space-y-2" aria-label="Workflow path">
-        {runs.map((run) => (
-          <li key={`${run.agent}-${run.order}`}
-            className={`flex flex-wrap items-center justify-between gap-2 rounded-xl px-3 py-2 ${
-              run.agent === "payment_simulator" ? "border border-dashed border-ocean" : "bg-foam dark:bg-[#07142f]"
-            }`}>
-            <span className="text-sm font-semibold">{stepLabel(run)}</span>
-            <Pill tone={runTone(run.status)}>{runLabel(run.status)}</Pill>
-          </li>
-        ))}
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-ocean">AI workflow</p>
+          <h2 className="text-base font-semibold">Agent path</h2>
+        </div>
+        <p className="max-w-sm text-xs leading-5 text-slate-500">Each step is a stored run. Evidence underneath is copied from that agent's report.</p>
+      </div>
+      <ol className="relative space-y-0" aria-label="Workflow path">
+        {runs.map((run, index) => {
+          const evidence = evidenceFor(run, c);
+          const live = run.status === "running" || run.status === "requires_human";
+          return (
+            <li key={`${run.agent}-${run.order}`} className="relative grid grid-cols-[2.25rem_minmax(0,1fr)] gap-3 pb-4">
+              {index < runs.length - 1 && <span aria-hidden className="absolute left-[1.05rem] top-8 bottom-0 w-px bg-line" />}
+              <span className={`relative z-10 mt-0.5 flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${live ? "bg-ocean text-white" : run.status === "completed" ? "bg-navy text-white" : run.status === "blocked" ? "bg-red-700 text-white" : "bg-white text-slate-500 ring-1 ring-line"}`}>
+                {index + 1}
+              </span>
+              <div className={`rounded-2xl px-4 py-3 ${run.agent === "payment_simulator" ? "border border-dashed border-ocean bg-white" : "bg-foam"}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-semibold">{stepLabel(run)}</span>
+                  <Pill tone={runTone(run.status)}>{runLabel(run.status)}</Pill>
+                </div>
+                <p className="mt-1 text-sm text-slate-600">{STEP_ROLE[run.agent] ?? run.summary ?? "Recorded workflow step."}</p>
+                {evidence.length > 0 && (
+                  <ul className="mt-2 space-y-1 border-t border-line/80 pt-2 text-sm">
+                    {evidence.map((line) => <li key={line}>{line}</li>)}
+                  </ul>
+                )}
+              </div>
+            </li>
+          );
+        })}
       </ol>
     </Card>
   );
+}
+
+function evidenceFor(
+  run: { agent: string; summary: string | null },
+  c: Pick<WorkflowCase, "reports" | "approval" | "payment" | "reconciliation" | "analysis" | "status" | "pending_reason">,
+): string[] {
+  const report = [...c.reports].reverse().find((item) => item.agent === run.agent);
+  const lines: string[] = [];
+  const summary = report?.summary || run.summary;
+  if (summary) lines.push(summary);
+  if (run.agent === "agent_3") {
+    const source = c.analysis?.analysis_source;
+    const validation = c.analysis?.validation?.validation_status;
+    if (validation) lines.push(`Validation status: ${validation}`);
+    if (source) lines.push(`Analysis source: ${source}`);
+  }
+  if (run.agent === "agent_1" && report?.data?.status) lines.push(`Duplicate check: ${report.data.status}`);
+  if (run.agent === "human_approval") {
+    if (c.approval) lines.push(`Approved by ${c.approval.approved_by}${c.approval.note ? ` — ${c.approval.note}` : ""}`);
+    else if (c.status === "AWAITING_APPROVAL") lines.push(c.pending_reason || "Waiting for a bank administrator.");
+  }
+  if (run.agent === "agent_2" && c.reconciliation) {
+    const verdict = c.reconciliation.verdict;
+    if (verdict) lines.push(`Reconciliation: ${verdict}`);
+    if (c.reconciliation.summary && c.reconciliation.summary !== summary) lines.push(String(c.reconciliation.summary));
+  }
+  if ((run.agent === "agent_5" || run.agent === "payment_simulator") && c.payment) {
+    lines.push(`Bank result: ${c.payment.provider_status}${c.payment.verified ? " · confirmed" : " · not confirmed"}`);
+    if (c.payment.failure_reason) lines.push(c.payment.failure_reason);
+  }
+  if (run.agent === "agent_4" && report?.data) {
+    if (report.data.customer_explanation) lines.push(String(report.data.customer_explanation));
+    if (report.data.failure_code) lines.push(`Bank code: ${report.data.failure_code}`);
+  }
+  return [...new Set(lines)].slice(0, 4);
 }
 
 export function WaitingForApprover({ c }: { c: WorkflowCase }) {

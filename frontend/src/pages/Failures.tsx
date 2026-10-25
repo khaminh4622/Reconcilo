@@ -33,8 +33,8 @@ export default function Failures() {
   if (loading) return <Working text="Loading payment failures" />;
   const rows = mergeFailures(data?.failures ?? []);
   return (
-    <div className="space-y-3">
-      <h1 className="text-2xl">Payment failures</h1>
+    <div className="rise space-y-5">
+      <h1 className="text-2xl font-semibold">Payment failures</h1>
       <Banner>Simulated, no real money.</Banner>
       <ErrorText error={error} />
       {rows.length === 0 && !error && <Empty>No failed payments.</Empty>}

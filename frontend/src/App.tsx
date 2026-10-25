@@ -1,5 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api, getToken, setToken, setUnauthorizedHandler } from "./api";
+import { NAV_ICONS } from "./icons";
 import { go, useRoute } from "./router";
 import type { Account, Health } from "./types";
 import { Banner, Ghost, Working } from "./ui";
@@ -36,19 +37,25 @@ export const SessionContext = createContext<{ me: Me | null; health: Health | nu
 export const useSession = () => useContext(SessionContext);
 
 const CUSTOMER_NAV = [
-  ["dashboard", "Dashboard"], ["new", "Upload invoice"], ["invoices", "My invoices"],
-  ["payments", "My payments"], ["investigate", "Agent investigation"], ["profile", "Profile"],
+  ["dashboard", "Overview"], ["new", "New case"], ["invoices", "Invoices"],
+  ["payments", "Payments"], ["investigate", "AI support"], ["profile", "Profile"],
 ];
 const ADMIN_NAV = [
-  ["bank", "Bank admin"], ["approvals", "Approval queue"], ["case", "Case lookup"],
-  ["overview", "Overview"], ["ledger", "Legacy ledger"], ["failures", "Payment failures"],
-  ["activity", "Agent activity"], ["customers", "Customers"],
+  ["bank", "Bank desk"], ["approvals", "Approvals"], ["case", "Case lookup"],
+  ["overview", "Operations"], ["ledger", "Reconciliation"], ["failures", "Failures"],
+  ["activity", "Activity"], ["customers", "Customers"],
 ];
 const DEMO_NAV = [["scenarios", "Demo scenarios"], ["demo-script", "Demo script"]];
 const ADMIN_PAGES = new Set([
   "bank", "approvals", "case", "overview", "ledger", "failures", "activity", "customers", "scenarios",
 ]);
 const CUSTOMER_PAGES = new Set(["dashboard", "new", "invoices", "payments", "investigate", "profile"]);
+
+const ROLE_LABEL: Record<Account["role"], string> = {
+  CUSTOMER: "Customer",
+  BANK_ADMIN: "Bank administrator",
+  DEMO_ADMIN: "Demo administrator",
+};
 
 export function navFor(role: Account["role"]): string[][] {
   if (role === "CUSTOMER") return CUSTOMER_NAV;
@@ -99,13 +106,12 @@ export default function App() {
 
   return (
     <SessionContext.Provider value={{ me, health }}>
-      <Header me={me} health={health} onSignOut={signOut} current={page} />
-      <main className="mx-auto max-w-5xl space-y-4 px-4 py-6">
+      <AppFrame me={me} health={health} onSignOut={signOut} current={page} bare={!me && page !== "demo-script"}>
         {health && !health.llm_configured && (
           <Banner>Live AI analysis is unavailable on this server. Scripted demo scenarios still work.</Banner>
         )}
         {content}
-      </main>
+      </AppFrame>
     </SessionContext.Provider>
   );
 }
@@ -144,41 +150,115 @@ export function Page({ me, route }: { me: Me; route: string[] }) {
 const Notice = ({ text }: { text: string }) => (
   <div className="flex flex-col items-center gap-3 py-16 text-center">
     <Ghost />
-    <p className="font-display text-xl font-bold">{text}</p>
+    <p className="text-xl font-semibold">{text}</p>
   </div>
 );
 
-function Header({ me, health, onSignOut, current }: { me: Me | null; health: Health | null; onSignOut: () => void; current: string }) {
-  const nav = me ? navFor(me.account.role) : [];
-  const dot = health === null ? "bg-slate-400" : health.llm_configured ? "bg-green-500" : "bg-amber-500";
+function AppFrame({
+  me, health, onSignOut, current, bare, children,
+}: {
+  me: Me | null;
+  health: Health | null;
+  onSignOut: () => void;
+  current: string;
+  bare: boolean;
+  children: ReactNode;
+}) {
+  const [menu, setMenu] = useState(false);
+  if (bare || !me) {
+    return <div className="min-h-screen bg-foam">{children}</div>;
+  }
+  return (
+    <div className="min-h-screen bg-foam lg:grid lg:grid-cols-[272px_minmax(0,1fr)]">
+      <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-lg focus:bg-white focus:px-3 focus:py-2">
+        Skip to content
+      </a>
+      {menu && (
+        <button aria-label="Close menu" className="fixed inset-0 z-30 bg-navy/50 lg:hidden" onClick={() => setMenu(false)} />
+      )}
+      <Sidebar me={me} health={health} current={current} onSignOut={onSignOut} open={menu} onNavigate={() => setMenu(false)} />
+      <div className="min-w-0">
+        <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-line/80 bg-foam/90 px-4 py-3 backdrop-blur lg:hidden">
+          <button
+            type="button"
+            className="rounded-xl bg-navy p-2 text-white"
+            aria-expanded={menu}
+            aria-label={menu ? "Close navigation" : "Open navigation"}
+            onClick={() => setMenu((open) => !open)}
+          >
+            <span className="block h-5 w-5">{menu ? "✕" : "☰"}</span>
+          </button>
+          <span className="font-semibold">GhostLedger</span>
+          <HealthDot health={health} className="ml-auto" onLight />
+        </header>
+        <main id="main" className="mx-auto max-w-6xl space-y-5 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function Sidebar({
+  me, health, current, onSignOut, open, onNavigate,
+}: {
+  me: Me;
+  health: Health | null;
+  current: string;
+  onSignOut: () => void;
+  open: boolean;
+  onNavigate: () => void;
+}) {
+  const nav = navFor(me.account.role);
+  return (
+    <aside className={`fixed inset-y-0 left-0 z-40 flex w-[272px] flex-col bg-navy text-white transition-transform lg:static lg:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"}`}>
+      <div className="flex items-center gap-3 px-5 pb-4 pt-6">
+        <Ghost size={42} />
+        <div>
+          <a href="#/" className="block text-lg font-semibold tracking-tight" onClick={onNavigate}>GhostLedger</a>
+          <p className="text-xs text-sky/90">Simulated treasury</p>
+        </div>
+      </div>
+      <div className="px-5 pb-4">
+        <HealthDot health={health} />
+      </div>
+      <nav aria-label="Main" className="flex-1 space-y-1 overflow-y-auto px-3">
+        {nav.map(([path, label]) => {
+          const Icon = NAV_ICONS[path];
+          const active = current === path || (path === "dashboard" && current === "");
+          return (
+            <a
+              key={path}
+              href={`#/${path}`}
+              aria-current={active ? "page" : undefined}
+              onClick={onNavigate}
+              className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-sky hover:bg-white/8 hover:text-white aria-[current=page]:bg-white/12 aria-[current=page]:text-white"
+            >
+              {Icon && <Icon className="h-[18px] w-[18px] shrink-0 opacity-90" />}
+              {label}
+            </a>
+          );
+        })}
+      </nav>
+      <div className="border-t border-white/10 p-4">
+        <p className="truncate text-sm font-semibold">{me.account.display_name}</p>
+        <p className="truncate text-xs text-sky/80">{me.account.email}</p>
+        <p className="mt-1 text-[0.7rem] font-bold uppercase tracking-[0.14em] text-teal-200/90">{ROLE_LABEL[me.account.role]}</p>
+        <button onClick={onSignOut} className="mt-3 w-full rounded-xl px-3 py-2 text-left text-sm text-sky hover:bg-white/10 hover:text-white">
+          Sign out
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+function HealthDot({ health, className = "", onLight = false }: { health: Health | null; className?: string; onLight?: boolean }) {
+  const dot = health === null ? "bg-slate-400" : health.llm_configured ? "bg-emerald-500" : "bg-amber-500";
   const dotText = health === null ? "Server not reachable" : health.llm_configured ? `Live AI ready (${health.llm_model})` : "Live AI not configured";
   return (
-    <header className="bg-navy text-white">
-      <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
-        <a href="#/" className="flex items-center gap-2 font-display text-lg font-extrabold">
-          <Ghost size={36} /> GhostLedger
-        </a>
-        <span className="flex items-center gap-1.5 text-xs text-sky" title={dotText}>
-          <span className={`h-2.5 w-2.5 rounded-full ${dot}`} aria-hidden /> {dotText}
-        </span>
-        {me && (
-          <nav aria-label="Main" className="flex w-full flex-wrap items-center gap-1 sm:ml-auto sm:w-auto">
-            {nav.map(([path, label]) => (
-              <a
-                key={path}
-                href={`#/${path}`}
-                aria-current={current === path ? "page" : undefined}
-                className="rounded-lg px-2.5 py-1.5 text-sm hover:bg-ocean aria-[current=page]:bg-ocean"
-              >
-                {label}
-              </a>
-            ))}
-            <button onClick={onSignOut} className="rounded-lg px-2.5 py-1.5 text-sm text-sky hover:bg-ocean hover:text-white">
-              Sign out
-            </button>
-          </nav>
-        )}
-      </div>
-    </header>
+    <span className={`flex items-center gap-2 text-xs ${onLight ? "text-slate-600" : "text-sky"} ${className}`} title={dotText}>
+      <span className={`h-2 w-2 rounded-full ${dot}`} aria-hidden />
+      <span className="max-w-[14rem] truncate">{dotText}</span>
+    </span>
   );
 }

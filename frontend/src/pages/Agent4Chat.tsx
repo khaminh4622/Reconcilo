@@ -154,17 +154,20 @@ export default function Agent4Chat({ c }: { c: WorkflowCase }) {
   const bank = status?.bank ?? null;
 
   return (
-    <Card className="scroll-mt-4" >
+    <Card className="scroll-mt-4">
       <section id="agent4-chat" aria-labelledby="agent4-chat-title">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 id="agent4-chat-title" className="text-base">Talk to Agent 4</h2>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-semibold text-green-900 dark:bg-green-900/40 dark:text-green-200">
-            <span className="h-2 w-2 rounded-full bg-green-500" aria-hidden />
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-ocean">AI support</p>
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <h2 id="agent4-chat-title" className="text-base font-semibold">Talk to Agent 4</h2>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-950">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden />
             Active support assistant
           </span>
           <Pill tone={statusTone(caseStatus)}>{statusLabel(caseStatus)}</Pill>
         </div>
-        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+        <p className="mt-1 text-sm text-slate-600">
           Agent 4 can explain this payment, check the Mock Bank records for this case, ask for
           missing details, and guide you to a verified next step. It cannot approve a payment, move
           money, or retry a failed one.
@@ -197,7 +200,7 @@ export default function Agent4Chat({ c }: { c: WorkflowCase }) {
             )}
 
             <div
-              className="mt-4 max-h-[26rem] space-y-3 overflow-y-auto rounded-2xl bg-foam/70 p-3 ring-1 ring-sky/30 dark:bg-[#07142f] dark:ring-ocean/30"
+              className="mt-4 max-h-[28rem] space-y-3 overflow-y-auto rounded-2xl bg-[#eef3f4] p-4 ring-1 ring-line"
               role="log"
               aria-live="polite"
               aria-label="Conversation with Agent 4"
@@ -209,8 +212,12 @@ export default function Agent4Chat({ c }: { c: WorkflowCase }) {
               )}
               {messages.map((message) => <Bubble key={message.message_id} message={message} />)}
               {sending && (
-                <div role="status" className="flex items-center gap-2 px-1 text-sm text-slate-600 dark:text-slate-300">
-                  <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-ocean" aria-hidden />
+                <div role="status" className="flex items-center gap-2 px-1 text-sm text-slate-600">
+                  <span className="flex gap-1" aria-hidden>
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ocean" />
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ocean [animation-delay:120ms]" />
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ocean [animation-delay:240ms]" />
+                  </span>
                   Agent 4 is checking this case&apos;s records and the bank evidence…
                 </div>
               )}
@@ -227,7 +234,7 @@ export default function Agent4Chat({ c }: { c: WorkflowCase }) {
                       onClick={() => void send(action.message, action.id)}
                       disabled={!action.available || sending}
                       title={action.reason ?? undefined}
-                      className="rounded-full bg-white px-3 py-1.5 text-left text-xs font-semibold text-ocean ring-1 ring-ocean hover:bg-sky/20 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-[#0e2350] dark:text-sky dark:ring-sky dark:hover:bg-ocean/20"
+                      className="rounded-full bg-white px-3 py-1.5 text-left text-xs font-semibold text-ocean ring-1 ring-ocean/50 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {action.label}
                     </button>
@@ -290,7 +297,7 @@ export default function Agent4Chat({ c }: { c: WorkflowCase }) {
                 rows={2}
                 maxLength={MAX_MESSAGE}
                 placeholder={isStaff ? "Reply to the customer as bank staff…" : "Ask Agent 4 about this payment…"}
-                className="min-h-[3.25rem] flex-1 resize-y rounded-xl border border-sky/60 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ocean dark:border-ocean/50 dark:bg-[#07142f]"
+                className="field min-h-[3.25rem] flex-1 resize-y"
               />
               <Button type="submit" disabled={!draft.trim() || sending} className="sm:mb-0.5">
                 {sending ? "Sending…" : "Send"}
@@ -377,17 +384,17 @@ function Bubble({ message }: { message: Agent4Message }) {
   return (
     <div className={`flex ${fromAgent ? "justify-start" : "justify-end"}`}>
       <div
-        className={`max-w-[88%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
+        className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm shadow-sm ${
           fromAgent
-            ? "bg-white text-navy ring-1 ring-sky/40 dark:bg-[#0e2350] dark:text-slate-100 dark:ring-ocean/30"
-            : "bg-ocean text-white"
+            ? "bg-white text-ink ring-1 ring-line"
+            : "bg-navy text-white"
         }`}
       >
-        <p className={`mb-1 text-[11px] font-bold ${fromAgent ? "text-ocean dark:text-sky" : "text-sky"}`}>
+        <p className={`mb-1 text-[11px] font-bold uppercase tracking-wide ${fromAgent ? "text-ocean" : "text-teal-100"}`}>
           {label}
         </p>
         <p className="whitespace-pre-wrap break-words">{message.body}</p>
-        <p className={`mt-1 text-[10px] ${fromAgent ? "text-slate-500 dark:text-slate-400" : "text-sky/90"}`}>
+        <p className={`mt-1 text-[10px] ${fromAgent ? "text-slate-500" : "text-sky"}`}>
           {when(message.created_at)}
         </p>
       </div>

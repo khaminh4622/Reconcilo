@@ -1,42 +1,112 @@
 @import "tailwindcss";
 
+/* Light treasury canvas. Dark styles apply only when `.dark` is set,
+   so the navy sidebar stays dark and the working area stays light. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
-  --color-navy: #0b1f4b;
-  --color-ocean: #1f6feb;
-  --color-sky: #8ec5ff;
-  --color-foam: #eaf3ff;
-  --font-display: "Nunito", ui-rounded, "Segoe UI", system-ui, sans-serif;
-  --font-sans: "Inter", system-ui, "Segoe UI", Roboto, sans-serif;
-  /* Nothing on screen is smaller than 13px. */
+  --color-navy: #071833;
+  --color-ink: #12263f;
+  --color-ocean: #0f6e6b;
+  --color-tide: #1d4e89;
+  --color-sky: #c5d5e0;
+  --color-foam: #f4f7f8;
+  --color-line: #d9e3ea;
+  --font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
+  --font-sans: "Manrope", "Avenir Next", system-ui, sans-serif;
   --text-xs: 0.8125rem;
   --text-xs--line-height: 1.25rem;
 }
 
 body {
-  @apply bg-foam text-navy font-sans text-[15px] dark:bg-[#07142f] dark:text-slate-100;
+  @apply bg-foam text-ink font-sans text-[15px] antialiased;
+  font-feature-settings: "ss01", "cv11";
 }
 
 h1, h2, h3 {
-  @apply font-display font-extrabold;
+  @apply font-sans tracking-tight text-ink;
 }
 
 :focus-visible {
   outline: 3px solid var(--color-ocean);
   outline-offset: 2px;
-  border-radius: 6px;
+  border-radius: 8px;
+}
+
+::selection {
+  background: #cde8e6;
+  color: #071833;
+}
+
+.field {
+  @apply mt-1.5 w-full rounded-xl border border-line bg-white px-3 py-2.5 text-sm font-medium text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.6)];
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.field:focus {
+  outline: none;
+  border-color: var(--color-ocean);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-ocean) 16%, transparent);
+}
+
+.rise {
+  animation: rise 420ms ease both;
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
 }
 
 @keyframes ghost-float {
   0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-6px); }
+  50% { transform: translateY(-4px); }
 }
+
 @keyframes ledger-flip {
   0%, 100% { transform: scaleX(1); }
   50% { transform: scaleX(-1); }
 }
-.ghost-float { animation: ghost-float 3.2s ease-in-out infinite; }
+
+.ghost-float { animation: ghost-float 3.6s ease-in-out infinite; }
 .ledger-flip { animation: ledger-flip 0.9s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
 
+table.data {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.875rem;
+}
+
+table.data th {
+  padding: 0.7rem 0.85rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #5d7082;
+  border-bottom: 1px solid var(--color-line);
+  white-space: nowrap;
+}
+
+table.data td {
+  padding: 0.85rem;
+  border-bottom: 1px solid #eef3f6;
+  vertical-align: middle;
+}
+
+table.data tbody tr {
+  transition: background-color 140ms ease;
+}
+
+table.data tbody tr:hover td {
+  background: #f7fbfb;
+}
+
+table.data tbody tr[aria-selected="true"] td {
+  background: #eef7f6;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .ghost-float, .ledger-flip { animation: none; }
+  .ghost-float, .ledger-flip, .rise { animation: none; }
 }

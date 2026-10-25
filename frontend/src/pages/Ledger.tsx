@@ -45,9 +45,9 @@ export default function Ledger() {
   };
 
   return (
-    <div className="space-y-3">
+    <div className="rise space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl">Bank ledger</h1>
+        <h1 className="text-2xl font-semibold">Reconciliation ledger</h1>
         <Button onClick={reconcile} disabled={reconciling}>{reconciling ? "Reconciling…" : "Reconcile now"}</Button>
       </div>
       <Banner>Simulated. {data?.disclaimer ?? "No real money."}</Banner>

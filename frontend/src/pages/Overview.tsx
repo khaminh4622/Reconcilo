@@ -1,6 +1,6 @@
 import { agentName, statusLabel } from "../labels";
 import type { CaseStatus } from "../types";
-import { Card, ErrorText, Working, useLoad } from "../ui";
+import { Card, ErrorText, PageIntro, Working, useLoad } from "../ui";
 
 interface OverviewData {
   cases_total: number;
@@ -16,8 +16,8 @@ export default function Overview() {
   if (!data) return <ErrorText error={error} />;
   const max = Math.max(1, ...Object.values(data.agent_runs));
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl">Overview</h1>
+    <div className="rise space-y-5">
+      <PageIntro kicker="Operations" title="Overview" lede="Counts from stored cases and payment records. Simulated, no real money." />
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Cases" value={data.cases_total} />
         <Stat label="Need a person" value={data.cases_needing_a_person} tone="text-amber-700 dark:text-amber-300" />

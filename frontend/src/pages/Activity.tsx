@@ -16,9 +16,9 @@ export default function Activity() {
   const [limit, setLimit] = useState(50);
   const { data, error, loading } = useLoad<{ activity: Entry[] }>(`/admin/activity?limit=${limit}`);
   return (
-    <div className="space-y-3">
+    <div className="rise space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-2">
-        <h1 className="text-2xl">Agent activity</h1>
+        <h1 className="text-2xl font-semibold">Agent activity</h1>
         <label className="text-sm font-semibold">
           Show newest{" "}
           <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="rounded-lg border border-sky px-2 py-1 dark:bg-[#07142f]">
