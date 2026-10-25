@@ -102,7 +102,7 @@ export default function App() {
   if (page === "demo-script") content = <DemoScript />;
   else if (loading) content = <Working text="Opening Reconcilo" />;
   else if (!me) content = <SignIn onSignedIn={loadMe} />;
-  else content = <Page me={me} route={route} />;
+  else content = <Page key={me.account.account_id} me={me} route={route} />;
 
   return (
     <SessionContext.Provider value={{ me, health }}>
@@ -133,8 +133,8 @@ export function Page({ me, route }: { me: Me; route: string[] }) {
     case "payments": return <MyPayments />;
     case "profile": return <Profile />;
     // A bank admin opens an individual case here; customers reach it by link.
-    case "cases": return route[1] ? <CasePage caseId={route[1]} /> : isBankAdmin ? <Approvals /> : <MyCases />;
-    case "case": return route[1] ? <CasePage caseId={route[1]} /> : <CaseLookup />;
+    case "cases": return route[1] ? <CasePage key={route[1]} caseId={route[1]} /> : isBankAdmin ? <Approvals /> : <MyCases />;
+    case "case": return route[1] ? <CasePage key={route[1]} caseId={route[1]} /> : <CaseLookup />;
     case "approvals": return <Approvals />;
     case "bank": return <BankAdmin />;
     case "overview": return <Overview />;

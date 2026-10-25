@@ -14,9 +14,12 @@ const AGENT4_CASE_STATUSES = new Set<string>([
 
 export default function CasePage({ caseId }: { caseId: string }) {
   const { data: c, error, loading } = useLoad<WorkflowCase>(`/workflow/cases/${encodeURIComponent(caseId)}`);
-  if (loading && !c) return <Working text="Opening the case" />;
-  if (!c) return <ErrorText error={error ?? "Case not found."} />;
-  return <CaseView c={c} />;
+  const current = c && c.case_id === caseId ? c : null;
+  if (!current) {
+    if (!loading && error && !c) return <ErrorText error={error} />;
+    return <Working text="Opening the case" />;
+  }
+  return <CaseView key={current.case_id} c={current} />;
 }
 
 export function CaseView({ c }: { c: WorkflowCase }) {

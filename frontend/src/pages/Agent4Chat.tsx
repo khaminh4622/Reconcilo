@@ -23,39 +23,60 @@ function errorMessage(error: unknown): string {
 export default function Agent4Chat({ c }: { c: WorkflowCase }) {
   const { me } = useSession();
   const isStaff = Boolean(me && me.account.role !== "CUSTOMER");
+  const accountId = me?.account.account_id ?? null;
+  // The transcript on screen belongs to one signed-in account and one case.
+  // Changing either one drops the previous view before the next load arrives.
+  const scopeKey = `${accountId ?? ""}:${c.case_id}`;
   const path = `/workflow/cases/${encodeURIComponent(c.case_id)}/agent4/conversation`;
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<{ key: string; message: string } | null>(null);
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [messages, setMessages] = useState<Agent4Message[]>([]);
   const [status, setStatus] = useState<Agent4PaymentStatus | null>(null);
   const [actions, setActions] = useState<Agent4SuggestedAction[]>([]);
   const [nextSteps, setNextSteps] = useState<string[]>([]);
   const [escalation, setEscalation] = useState<Agent4Escalation | null>(null);
   const [draft, setDraft] = useState("");
+  const [draftScope, setDraftScope] = useState(scopeKey);
   const [sending, setSending] = useState(false);
   const [requesting, setRequesting] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [newCase, setNewCase] = useState<WorkflowCase | null>(null);
   const bottom = useRef<HTMLDivElement | null>(null);
+  const ready = loadedKey === scopeKey;
+
+  if (draftScope !== scopeKey) {
+    setDraftScope(scopeKey);
+    setDraft("");
+    setSendError(null);
+    setNotice(null);
+    setNewCase(null);
+    setSending(false);
+    setRequesting(false);
+  }
 
   useEffect(() => {
     let live = true;
-    setLoading(true);
+    setLoadedKey(null);
+    setMessages([]);
+    setStatus(null);
+    setActions([]);
+    setNextSteps([]);
+    setEscalation(null);
     setLoadError(null);
     api<Agent4Conversation>(path)
       .then((conversation) => {
         if (!live) return;
         applyConversation(conversation);
+        setLoadedKey(scopeKey);
       })
-      .catch((error: unknown) => live && setLoadError(errorMessage(error)))
-      .finally(() => live && setLoading(false));
+      .catch((error: unknown) => live && setLoadError({ key: scopeKey, message: errorMessage(error) }));
     return () => {
       live = false;
     };
-    // The case id is the only input that should reload the conversation.
+    // scopeKey already includes the case id and the signed-in account.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path]);
+  }, [path, scopeKey]);
 
   useEffect(() => {
     bottom.current?.scrollIntoView?.({ block: "nearest" });
@@ -173,12 +194,14 @@ export default function Agent4Chat({ c }: { c: WorkflowCase }) {
           money, or retry a failed one.
         </p>
 
-        {loading && !status ? (
-          <Working text="Opening Agent 4" />
-        ) : loadError ? (
-          <div className="mt-3">
-            <ErrorText error={loadError} />
-          </div>
+        {!ready ? (
+          loadError?.key === scopeKey ? (
+            <div className="mt-3">
+              <ErrorText error={loadError.message} />
+            </div>
+          ) : (
+            <Working text="Opening Agent 4" />
+          )
         ) : (
           <>
             <Agent4Findings

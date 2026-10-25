@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, ApiError } from "./api";
 import type { Tone } from "./labels";
 
@@ -129,13 +129,17 @@ export function Working({ text }: { text: string }) {
 export function useLoad<T>(path: string | null) {
   const [state, setState] = useState<{ data: T | null; error: string | null; loading: boolean }>({ data: null, error: null, loading: true });
   const [tick, setTick] = useState(0);
+  const requested = useRef(path);
   useEffect(() => {
+    const pathChanged = requested.current !== path;
+    requested.current = path;
     if (!path) {
       setState({ data: null, error: null, loading: false });
       return;
     }
     let live = true;
-    setState((s) => ({ ...s, loading: true, error: null }));
+    // A new path must not keep showing the previous record while it loads.
+    setState((s) => ({ data: pathChanged ? null : s.data, error: null, loading: true }));
     api<T>(path)
       .then((data) => live && setState({ data, error: null, loading: false }))
       .catch((e: ApiError) => live && setState({ data: null, error: e.message, loading: false }));
