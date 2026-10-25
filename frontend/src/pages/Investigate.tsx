@@ -2,8 +2,8 @@ import { useState } from "react";
 import { api, ApiError } from "../api";
 import { money } from "../labels";
 import type { WorkflowCase } from "../types";
-import { Button, Card, ErrorText, Pill, Working, useLoad } from "../ui";
-import { BankPill } from "./CustomerDashboard";
+import { Button, Card, Empty, ErrorText, PageIntro, Pill, Working, useLoad } from "../ui";
+import { BankPill } from "./bankStatus";
 
 interface BankPayment {
   payment_id: string;
@@ -33,8 +33,9 @@ export default function Investigate() {
   const [result, setResult] = useState<Record<string, any> | null>(null);
   const [exception, setException] = useState<Record<string, any> | null>(null);
 
-  if (loading) return <Working text="Loading your payments" />;
+  if (loading && !data) return <Working text="Loading your payments" />;
   const payments = data?.bank_payments ?? [];
+  const cases = data?.cases ?? [];
 
   const ask = async () => {
     setFormError(null);
@@ -45,8 +46,6 @@ export default function Investigate() {
     try {
       const created = await api<WorkflowCase>("/workflow/cases/message", { method: "POST", json: { message: text } });
       setResult(created as unknown as Record<string, any>);
-      // If the case ends on an exception, fetch Agent 4's own report so the
-      // customer sees the structured diagnosis rather than a raw case dump.
       if (created.reports?.some((r) => r.agent === "agent_4")) {
         setException(created as unknown as Record<string, any>);
       }
@@ -58,84 +57,102 @@ export default function Investigate() {
   };
 
   return (
-    <div className="space-y-3">
-      <h1 className="text-2xl">Agent investigation</h1>
-      <p className="text-sm">
-        Ask Agent 4 about a payment that failed, is stuck, or never arrived. It reads only evidence
-        for your own case, and it never retries a payment: a retry needs a fresh human approval.
-      </p>
+    <div className="rise space-y-5">
+      <PageIntro
+        kicker="AI support"
+        title="Ask Agent 4"
+        lede="Agent 4 explains a payment that failed, is stuck, or never arrived. It reads only your case, and it never retries a payment. A retry needs a fresh human approval."
+      />
       <ErrorText error={error} />
 
-      <Card>
-        <h2 className="mb-2 text-base">Your payments</h2>
-        {payments.length === 0 ? (
-          <p className="text-sm">No payments yet.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr>
-                  {["Invoice", "To", "Amount", "Bank status", "Reference"].map((h) => (
-                    <th key={h} className="py-2 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {payments.map((p) => (
-                  <tr key={p.payment_id} className="border-t border-sky/40">
-                    <td className="py-2 font-medium">{p.invoice_number ?? "—"}</td>
-                    <td>{p.payee ?? "—"}</td>
-                    <td>{money(p.amount, p.currency)}</td>
-                    <td><BankPill status={p.status} /></td>
-                    <td className="font-mono text-xs">{p.settlement_reference ?? p.failure_code ?? "—"}</td>
-                  </tr>
+      <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+        <Card>
+          <h2 className="text-base font-semibold">Your payments</h2>
+          {payments.length === 0 ? (
+            <div className="mt-3"><Empty>No payments yet.</Empty></div>
+          ) : (
+            <ul className="mt-3 space-y-2">
+              {payments.map((payment) => (
+                <li key={payment.payment_id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setChosen(payment.payment_id);
+                      setMessage(`My payment for invoice ${payment.invoice_number} of ${payment.amount} ${payment.currency} to ${payment.payee} has not arrived. Please investigate.`);
+                    }}
+                    className={`w-full rounded-xl px-3 py-3 text-left ring-1 ${chosen === payment.payment_id ? "bg-teal-50 ring-ocean" : "bg-foam ring-transparent hover:ring-line"}`}
+                  >
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="font-semibold">{payment.invoice_number ?? "Invoice"}</span>
+                      <BankPill status={payment.status} />
+                    </span>
+                    <span className="mt-1 block text-sm text-slate-600">{money(payment.amount, payment.currency)} · {payment.payee ?? "vendor"}</span>
+                    <span className="mt-1 block font-mono text-xs text-slate-500">{payment.settlement_reference ?? payment.failure_code ?? "No reference yet"}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {cases.length > 0 && (
+            <div className="mt-4 border-t border-line pt-4">
+              <h3 className="text-sm font-semibold">Open an existing conversation</h3>
+              <ul className="mt-2 space-y-1 text-sm">
+                {cases.slice(0, 6).map((item) => (
+                  <li key={item.case_id}>
+                    <a href={`#/cases/${item.case_id}#agent4-chat`} className="font-semibold text-ocean hover:underline">
+                      {item.invoice_number ?? item.case_id.slice(0, 8)}
+                    </a>
+                    <span className="text-slate-500"> · {item.status.replaceAll("_", " ").toLowerCase()}</span>
+                  </li>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+              </ul>
+            </div>
+          )}
+        </Card>
 
-      <Card>
-        <h2 className="text-base">Describe the problem</h2>
-        <label className="mt-2 block text-sm font-semibold">
-          Which payment? (optional)
-          <select
-            value={chosen}
-            onChange={(e) => {
-              const p = payments.find((x) => x.payment_id === e.target.value);
-              setChosen(e.target.value);
-              if (p) setMessage(`My payment for invoice ${p.invoice_number} of ${p.amount} ${p.currency} to ${p.payee} has not arrived. Please investigate.`);
-            }}
-            className="mt-1 w-full rounded-xl border border-sky px-3 py-2 font-normal dark:bg-[#07142f]"
-          >
-            <option value="">Choose one of your payments</option>
-            {payments.map((p) => (
-              <option key={p.payment_id} value={p.payment_id}>
-                {p.invoice_number} · {money(p.amount, p.currency)} · {p.status}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="mt-3 block text-sm font-semibold">
-          What happened?
-          <textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            rows={4}
-            className="mt-1 w-full rounded-xl border border-sky px-3 py-2 font-normal dark:bg-[#07142f]"
-          />
-        </label>
-        <div className="mt-3 space-y-3">
-          <ErrorText error={formError} />
-          <Button onClick={ask} disabled={busy}>{busy ? "Agent 4 is investigating…" : "Ask Agent 4"}</Button>
-        </div>
-      </Card>
+        <Card>
+          <h2 className="text-base font-semibold">Describe the problem</h2>
+          <label className="mt-3 block text-sm font-semibold">
+            Which payment?
+            <select
+              value={chosen}
+              onChange={(e) => {
+                const payment = payments.find((item) => item.payment_id === e.target.value);
+                setChosen(e.target.value);
+                if (payment) setMessage(`My payment for invoice ${payment.invoice_number} of ${payment.amount} ${payment.currency} to ${payment.payee} has not arrived. Please investigate.`);
+              }}
+              className="field font-normal"
+            >
+              <option value="">Choose one of your payments</option>
+              {payments.map((payment) => (
+                <option key={payment.payment_id} value={payment.payment_id}>
+                  {payment.invoice_number} · {money(payment.amount, payment.currency)} · {payment.status}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="mt-3 block text-sm font-semibold">
+            What happened?
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              rows={5}
+              className="field font-normal"
+              placeholder="My payment has not arrived."
+            />
+          </label>
+          <div className="mt-3 space-y-3">
+            <ErrorText error={formError} />
+            <Button onClick={ask} disabled={busy}>{busy ? "Agent 4 is investigating…" : "Ask Agent 4"}</Button>
+          </div>
+          {busy && <div className="mt-3"><Working text="Agent 4 is reading your case" /></div>}
+        </Card>
+      </div>
 
       {result && (
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-base">Agent 4's answer</h2>
+            <h2 className="text-base font-semibold">Agent 4&apos;s answer</h2>
             <Pill tone="info">Case {String(result.case_id ?? "").slice(0, 8)}</Pill>
           </div>
           <p className="mt-2 text-base">{result.customer_response?.answer ?? result.outcome ?? "The case has been recorded."}</p>
@@ -143,26 +160,26 @@ export default function Investigate() {
             <>
               <h3 className="mt-3 text-sm font-semibold">Next steps</h3>
               <ul className="mt-1 list-disc pl-5 text-sm">
-                {result.customer_response.next_steps.map((s: string) => <li key={s}>{s}</li>)}
+                {result.customer_response.next_steps.map((step: string) => <li key={step}>{step}</li>)}
               </ul>
             </>
           )}
           <p className="mt-3 text-sm">
-            <a href={`#/cases/${result.case_id}`} className="text-ocean underline dark:text-sky">Open the full case</a>
+            <a href={`#/cases/${result.case_id}#agent4-chat`} className="font-semibold text-ocean hover:underline">Continue in the case conversation</a>
           </p>
         </Card>
       )}
 
       {exception && (
         <Card>
-          <h2 className="text-base">Exception details</h2>
-          {exception.reports.filter((r: any) => r.agent === "agent_4").map((r: any) => (
-            <div key={r.summary} className="mt-2 text-sm">
-              <p>{r.summary}</p>
-              {r.data?.customer_explanation && <p className="mt-1">{r.data.customer_explanation}</p>}
-              {r.data?.failure_code && <p className="mt-1"><b>Bank code:</b> {r.data.failure_code}</p>}
-              {r.data?.retry_permitted !== undefined && (
-                <p className="mt-1"><b>Retry permitted automatically:</b> {r.data.retry_permitted ? "Yes" : "No"}</p>
+          <h2 className="text-base font-semibold">Exception details</h2>
+          {exception.reports.filter((report: any) => report.agent === "agent_4").map((report: any) => (
+            <div key={report.summary} className="mt-2 text-sm">
+              <p>{report.summary}</p>
+              {report.data?.customer_explanation && <p className="mt-1">{report.data.customer_explanation}</p>}
+              {report.data?.failure_code && <p className="mt-1"><b>Bank code:</b> {report.data.failure_code}</p>}
+              {report.data?.retry_permitted !== undefined && (
+                <p className="mt-1"><b>Retry permitted automatically:</b> {report.data.retry_permitted ? "Yes" : "No"}</p>
               )}
             </div>
           ))}

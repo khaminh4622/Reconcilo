@@ -18,11 +18,11 @@ interface Timeline {
 }
 
 const MARK: Record<TimelineStep["state"], [string, string]> = {
-  done: ["✓", "bg-green-100 text-green-900 dark:bg-green-900/40 dark:text-green-200"],
-  current: ["●", "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200"],
-  waiting: ["○", "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"],
-  failed: ["✕", "bg-red-100 text-red-900 dark:bg-red-900/40 dark:text-red-200"],
-  skipped: ["–", "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500"],
+  done: ["✓", "bg-emerald-100 text-emerald-950"],
+  current: ["●", "bg-amber-100 text-amber-950"],
+  waiting: ["○", "bg-slate-100 text-slate-500"],
+  failed: ["✕", "bg-red-100 text-red-900"],
+  skipped: ["–", "bg-slate-100 text-slate-400"],
 };
 
 /**

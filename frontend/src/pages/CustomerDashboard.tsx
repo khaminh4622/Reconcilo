@@ -1,7 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { useSession } from "../App";
 import { money, statusLabel, statusTone, when } from "../labels";
-import { Banner, Card, Empty, ErrorText, Pill, Working, useLoad } from "../ui";
+import { BankPill } from "./bankStatus";
+import { Banner, Card, Empty, ErrorText, Metric, PageIntro, Pill, Working, useLoad } from "../ui";
 
 interface BankPayment {
   payment_id: string;
@@ -34,18 +35,6 @@ interface Dashboard {
   bank_account: BankAccount | null;
 }
 
-/** One label per stored bank status. Never inferred in the browser. */
-export const BANK_LABEL: Record<string, [string, "confirmed" | "attention" | "failure" | "info" | "neutral"]> = {
-  PENDING_APPROVAL: ["Bank reviewing payment", "attention"],
-  APPROVED: ["Approved, awaiting bank", "info"],
-  PROCESSING: ["Bank processing", "info"],
-  SETTLED: ["Settled (simulated)", "confirmed"],
-  REJECTED: ["Rejected", "failure"],
-  FAILED: ["Failed", "failure"],
-  UNCERTAIN: ["Outcome unknown", "attention"],
-  CANCELLED: ["Cancelled", "neutral"],
-};
-
 interface InvoiceRow {
   canonical_id: string;
   case_id: string;
@@ -60,10 +49,7 @@ interface InvoiceRow {
   upload_count: number;
 }
 
-export const BankPill = ({ status }: { status: string }) => {
-  const [text, tone] = BANK_LABEL[status] ?? [status, "neutral"];
-  return <Pill tone={tone}>{text}</Pill>;
-};
+export { BankPill } from "./bankStatus";
 
 export default function CustomerDashboard() {
   const { me } = useSession();
@@ -85,89 +71,140 @@ export default function CustomerDashboard() {
   const payments = currentPayments(data?.bank_payments ?? []);
   const invoices = invoicesFeed.data ?? [];
   const settled = payments.filter((p) => p.status === "SETTLED");
-  const attention = payments.filter((p) => ["FAILED", "REJECTED", "UNCERTAIN", "PENDING_APPROVAL"].includes(p.status));
+  const pending = payments.filter((p) => p.status === "PENDING_APPROVAL");
+  const outstanding = invoices.filter((invoice) => invoice.bank_status !== "SETTLED");
+  const name = me?.account.display_name ?? data?.account.display_name ?? "there";
+  const activity = recentActivity(invoices, payments);
 
   return (
-    <div className="space-y-3">
-      <h1 className="text-2xl">Welcome, {me?.account.display_name ?? data?.account.display_name}</h1>
-      <Banner>
-        Simulated banking environment. Balances and transfers are fictional; no real money moves.
-      </Banner>
+    <div className="rise space-y-5">
+      <PageIntro
+        kicker="Customer portal"
+        title={`Good to see you, ${name}`}
+        lede="Balances, invoices and payment states below are read from your account. Simulated environment — no real money moves."
+        actions={<a href="#/new" className="rounded-xl bg-ocean px-4 py-2 text-sm font-semibold text-white hover:bg-navy">Upload an invoice</a>}
+      />
+      <Banner>Simulated banking environment. Balances and transfers are fictional; no real money moves.</Banner>
       <ErrorText error={error ?? invoicesFeed.error} />
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric
+          label="Available simulated balance"
+          value={data?.bank_account ? money(data.bank_account.balance, data.bank_account.currency) : "—"}
+          hint={data?.bank_account
+            ? `${data.bank_account.account_number_masked} · ${data.bank_account.status}`
+            : "No simulated account yet. Invoices can still be uploaded."}
+        />
+        <Metric
+          label="Outstanding invoices"
+          value={String(outstanding.length)}
+          hint={invoicesFeed.loading && !invoicesFeed.data
+            ? "Loading invoices…"
+            : outstanding.length === 0
+              ? "Every invoice on file is settled, or none are uploaded."
+              : totalsHint(outstanding)}
+        />
+        <Metric
+          label="Pending approvals"
+          value={String(pending.length)}
+          hint={pending.length === 0 ? "Nothing is waiting on a bank administrator." : "A person at the bank still has to decide."}
+        />
+        <Metric
+          label="Settled payments"
+          value={String(settled.length)}
+          hint={settled.length === 0 ? "No simulated settlement on this account yet." : "Matched and marked settled by the bank."}
+        />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[1.3fr_0.7fr]">
         <Card>
-          <h2 className="text-sm text-slate-500 dark:text-slate-400">My simulated account</h2>
-          {data?.bank_account ? (
-            <>
-              <p className="mt-1 font-display text-2xl font-bold">
-                {money(data.bank_account.balance, data.bank_account.currency)}
-              </p>
-              <p className="text-sm">{data.bank_account.account_number_masked} · {data.bank_account.status}</p>
-            </>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="text-base font-semibold">Recent activity</h2>
+            <a href="#/payments" className="text-sm font-semibold text-ocean hover:underline">Payments</a>
+          </div>
+          {activity.length === 0 ? (
+            <Empty>No activity yet. Upload an invoice to start a case.</Empty>
           ) : (
-            <p className="mt-2 text-sm">
-              No simulated account yet. Your invoices can still be uploaded; ask a bank admin to onboard
-              you before a payment can settle.
-            </p>
+            <ol className="space-y-2">
+              {activity.map((item) => (
+                <li key={item.key} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-foam px-3 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">{item.title}</p>
+                    <p className="text-xs text-slate-500">{item.detail}</p>
+                  </div>
+                  <span className="flex items-center gap-2">
+                    {item.badge}
+                    {item.href && <a href={item.href} className="text-sm font-semibold text-ocean hover:underline">Open</a>}
+                  </span>
+                </li>
+              ))}
+            </ol>
           )}
         </Card>
         <Card>
-          <h2 className="text-sm text-slate-500 dark:text-slate-400">Settled payments</h2>
-          <p className="mt-1 font-display text-2xl font-bold">{settled.length}</p>
-          <p className="text-sm">{attention.length} need attention</p>
-        </Card>
-        <Card>
-          <h2 className="text-sm text-slate-500 dark:text-slate-400">Invoices on file</h2>
-          <p className="mt-1 font-display text-2xl font-bold">{invoices.length}</p>
-          <a href="#/new" className="text-sm text-ocean underline dark:text-sky">Upload an invoice</a>
+          <h2 className="text-base font-semibold">How a payment moves</h2>
+          <ol className="mt-3 space-y-3 text-sm">
+            {[
+              ["Agent 3", "Reads the invoice and checks the figures."],
+              ["Agent 1", "Looks for a duplicate or an earlier payment."],
+              ["Bank desk", "A bank administrator approves or declines."],
+              ["Agents 5, 2, 4", "Execution, reconciliation, then exceptions if needed."],
+            ].map(([title, body], index) => (
+              <li key={title} className="flex gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-navy text-xs font-bold text-white">{index + 1}</span>
+                <span><b>{title}.</b> {body}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-4 text-xs leading-5 text-slate-500">An agent never approves its own payment. The bank decision stays with a person.</p>
         </Card>
       </div>
-
-      <Card>
-        <h2 className="mb-2 text-base">Payment timeline</h2>
-        {payments.length === 0 ? (
-          <Empty>No payments yet. Upload an invoice to start one.</Empty>
-        ) : (
-          <ul className="space-y-2">
-            {payments.slice(0, 8).map((p) => (
-              <li key={p.payment_id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-foam px-3 py-2 dark:bg-[#07142f]">
-                <span className="text-sm">
-                  <b>{p.invoice_number ?? "Invoice"}</b> · {money(p.amount, p.currency)} to {p.payee ?? "vendor"}
-                </span>
-                <span className="flex items-center gap-2">
-                  <BankPill status={p.status} />
-                  {p.case_id && <a href={`#/cases/${p.case_id}`} className="text-sm text-ocean underline dark:text-sky">Open case</a>}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-
-      <Card>
-        <h2 className="mb-2 text-base">Recent invoices</h2>
-        {invoices.length === 0 ? <Empty>Nothing uploaded yet.</Empty> : (
-          <ul className="space-y-1 text-sm">
-            {invoices.slice(0, 5).map((invoice) => (
-              <li key={invoice.canonical_id} className="flex flex-wrap items-center justify-between gap-2">
-                <a href={`#/cases/${invoice.case_id}`} className="text-ocean underline dark:text-sky">
-                  {invoice.invoice_number ?? "No invoice number"} · {invoice.vendor_name ?? "vendor"}
-                </a>
-                <span className="flex items-center gap-2">
-                  <span>{money(invoice.amount, invoice.currency)}</span>
-                  {invoice.bank_status
-                    ? <BankPill status={invoice.bank_status} />
-                    : <Pill tone={statusTone(invoice.case_status as any)}>{statusLabel(invoice.case_status as any)}</Pill>}
-                  <span className="text-xs text-slate-500 dark:text-slate-400">{when(invoice.created_at)}</span>
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
     </div>
   );
+}
+
+function totalsHint(invoices: InvoiceRow[]): string {
+  const byCurrency = new Map<string, number>();
+  let unpriced = 0;
+  for (const invoice of invoices) {
+    const amount = Number(invoice.amount);
+    if (!Number.isFinite(amount)) {
+      unpriced += 1;
+      continue;
+    }
+    const currency = invoice.currency || "—";
+    byCurrency.set(currency, (byCurrency.get(currency) ?? 0) + amount);
+  }
+  const parts = [...byCurrency.entries()].map(([currency, amount]) => money(amount.toFixed(2), currency));
+  if (parts.length === 0) return `${invoices.length} invoice${invoices.length === 1 ? "" : "s"} without a recorded amount.`;
+  return `Not settled: ${parts.join(" · ")}${unpriced ? ` · ${unpriced} without an amount` : ""}`;
+}
+
+function recentActivity(invoices: InvoiceRow[], payments: BankPayment[]) {
+  const items: { key: string; at: string; title: string; detail: string; href: string | null; badge: ReactNode }[] = [];
+  for (const invoice of invoices) {
+    items.push({
+      key: `invoice-${invoice.canonical_id}`,
+      at: invoice.updated_at || invoice.created_at,
+      title: `${invoice.invoice_number ?? "Invoice"} · ${invoice.vendor_name ?? "vendor"}`,
+      detail: `Invoice updated ${when(invoice.updated_at || invoice.created_at)}`,
+      href: `#/cases/${invoice.case_id}`,
+      badge: invoice.bank_status
+        ? <BankPill status={invoice.bank_status} />
+        : <Pill tone={statusTone(invoice.case_status as never)}>{statusLabel(invoice.case_status as never)}</Pill>,
+    });
+  }
+  for (const payment of payments) {
+    items.push({
+      key: `pay-${payment.payment_id}`,
+      at: payment.processed_at || payment.created_at,
+      title: `${payment.invoice_number ?? "Payment"} · ${money(payment.amount, payment.currency)}`,
+      detail: `To ${payment.payee ?? "vendor"} · ${when(payment.processed_at || payment.created_at)}`,
+      href: payment.case_id ? `#/cases/${payment.case_id}` : null,
+      badge: <BankPill status={payment.status} />,
+    });
+  }
+  return items.sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0)).slice(0, 6);
 }
 
 /** Current payment state for the compact dashboard, not the permanent ledger.

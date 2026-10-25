@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api, ApiError } from "../api";
 import { money, when } from "../labels";
-import { Banner, Button, Card, Collapse, Empty, ErrorText, Pill, Raw, Working, useLoad } from "../ui";
+import { Banner, Button, Card, Collapse, Empty, ErrorText, PageIntro, Pill, Raw, Working, useLoad } from "../ui";
 import { BankPill } from "./CustomerDashboard";
 
 interface Account {
@@ -70,10 +70,11 @@ interface Queue {
 }
 
 const TABS = [
-  ["queue", "Waitlist bank statement"],
-  ["accounts", "Bank accounts"],
-  ["balances", "Customer balances"],
-  ["transactions", "Transaction history"],
+  ["queue", "Approvals"],
+  ["accounts", "Accounts"],
+  ["balances", "Balances"],
+  ["transactions", "Transactions"],
+  ["reconciliation", "Reconciliation"],
   ["audit", "Audit log"],
 ] as const;
 
@@ -90,6 +91,9 @@ export default function BankAdmin() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
+  const [reconciling, setReconciling] = useState(false);
+  const [reconcileError, setReconcileError] = useState<string | null>(null);
+  const [reconcileReport, setReconcileReport] = useState<Record<string, any> | null>(null);
   const pendingRequests = (queue.data?.requests ?? []).filter((request) => request.status === "PENDING_APPROVAL");
 
   const refresh = () => {
@@ -118,6 +122,18 @@ export default function BankAdmin() {
     }
   };
 
+  const reconcile = async () => {
+    setReconciling(true);
+    setReconcileError(null);
+    try {
+      setReconcileReport(await api<Record<string, any>>("/bank/reconcile", { method: "POST" }));
+    } catch (e) {
+      setReconcileError((e as ApiError).message);
+    } finally {
+      setReconciling(false);
+    }
+  };
+
   const process = async (paymentId: string) => {
     setBusy(paymentId);
     setError(null);
@@ -133,11 +149,13 @@ export default function BankAdmin() {
   };
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl">Bank admin</h1>
-        <Button kind="ghost" onClick={() => { overview.reload(); queue.reload(); }}>Refresh</Button>
-      </div>
+    <div className="rise space-y-5">
+      <PageIntro
+        kicker="Bank administrator"
+        title="Bank desk"
+        lede="Pending payments, simulated balances, transaction history and the audit log. Customers cannot open this desk. Approve and decline stay with a signed-in bank administrator."
+        actions={<Button kind="ghost" onClick={() => { overview.reload(); queue.reload(); }}>Refresh</Button>}
+      />
       <Banner>
         {overview.data?.disclaimer ??
           "SIMULATED BANK — NO REAL MONEY. Every account, balance and transfer on this page is fictional."}
@@ -153,10 +171,10 @@ export default function BankAdmin() {
         </div>
       )}
 
-      <div role="tablist" className="flex flex-wrap gap-2" aria-label="Bank Admin categories">
+      <div role="tablist" className="flex gap-1 overflow-x-auto rounded-2xl bg-white p-1 shadow-sm ring-1 ring-line" aria-label="Bank Admin categories">
         {TABS.map(([id, label]) => (
           <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
-            className="rounded-xl px-3 py-1.5 text-sm font-semibold ring-1 ring-ocean aria-selected:bg-ocean aria-selected:text-white">
+            className="whitespace-nowrap rounded-xl px-3 py-2 text-sm font-semibold text-slate-600 aria-selected:bg-navy aria-selected:text-white">
             {label}
           </button>
         ))}
@@ -165,7 +183,7 @@ export default function BankAdmin() {
       {tab === "queue" && <Card className="ring-2 ring-ocean" aria-label="Bank statement approval waitlist">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-base">Waitlist bank statement</h2>
+            <h2 className="text-base font-semibold">Pending payment approvals</h2>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
               Approval waitlist — review the invoice and the Agent 3 / Agent 1 checks before making the bank decision.
             </p>
@@ -405,6 +423,58 @@ export default function BankAdmin() {
             </tbody>
           </table>
           {transactions.data?.transactions.length === 0 && <Empty>No transactions.</Empty>}
+        </Card>
+      )}
+
+      {tab === "reconciliation" && (
+        <Card>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold">Reconciliation status</h2>
+              <p className="mt-1 max-w-2xl text-sm text-slate-600">
+                Agent 2 compares expected payments with bank evidence already on file. Running it
+                reads those records and stores a report. It does not approve, retry, or move funds.
+              </p>
+            </div>
+            <Button onClick={reconcile} disabled={reconciling}>{reconciling ? "Reconciling…" : "Run reconciliation"}</Button>
+          </div>
+          <div className="mt-3"><ErrorText error={reconcileError} /></div>
+          {!reconcileReport && !reconciling && (
+            <p className="mt-3 text-sm text-slate-500">No report loaded in this session yet.</p>
+          )}
+          {reconcileReport && (
+            <div className="mt-4 space-y-3">
+              <p className="text-sm">{reconcileReport.summary ?? "The bank returned a reconciliation report."}</p>
+              <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                <Fact label="Expected" value={String(reconcileReport.expected_count ?? "—")} />
+                <Fact label="Matched" value={String(reconcileReport.matched ?? "—")} />
+                <Fact label="Bank rows" value={String(reconcileReport.bank_transaction_count ?? "—")} />
+                <Fact label="Unmatched credits" value={String(reconcileReport.unmatched_bank ?? "—")} />
+              </dl>
+              {Array.isArray(reconcileReport.rows) && reconcileReport.rows.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="data">
+                    <thead>
+                      <tr>
+                        {["Invoice", "Customer", "Vendor", "Verdict", "Status"].map((heading) => <th key={heading}>{heading}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reconcileReport.rows.map((row: Record<string, any>, index: number) => (
+                        <tr key={row.case_id ?? row.invoice_number ?? index}>
+                          <td className="font-semibold">{row.invoice_number ?? "—"}</td>
+                          <td>{row.customer_name ?? "—"}</td>
+                          <td>{row.vendor_name ?? "—"}</td>
+                          <td>{String(row.match_type ?? "—")}</td>
+                          <td>{String(row.final_status ?? "—")}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
         </Card>
       )}
 

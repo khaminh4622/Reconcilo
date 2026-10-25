@@ -1,5 +1,5 @@
 import { money, statusLabel, statusTone } from "../labels";
-import { Card, Empty, ErrorText, Pill, Working, useLoad } from "../ui";
+import { Card, Empty, ErrorText, PageIntro, Pill, Working, useLoad } from "../ui";
 import { BankPill } from "./CustomerDashboard";
 
 interface QueueItem {
@@ -56,12 +56,15 @@ export function ApprovalsList({
     if (r.case_id) byCase.set(r.case_id, r);
   }
   return (
-    <div className="space-y-3">
-      <h1 className="text-2xl">Approval queue</h1>
-      <p className="text-sm">
-        Payment runs only after a bank administrator authorises the exact invoice, payee, amount and
-        currency — and never the person who requested it. Open <a href="#/bank" className="underline">Bank Admin</a>
-        to make the recorded Approve or Decline decision and process the simulated bank result.
+    <div className="rise space-y-5">
+      <PageIntro
+        kicker="Bank desk"
+        title="Approval queue"
+        lede="Payment runs only after a bank administrator authorises the exact invoice, payee, amount and currency — and never the person who requested it."
+      />
+      <p className="text-sm text-slate-600">
+        Open <a href="#/bank" className="font-semibold text-ocean hover:underline">Bank Admin</a> to
+        make the recorded Approve or Decline decision and process the simulated bank result.
       </p>
       <ErrorText error={error} />
       {items.length === 0 && !error && <Empty>Nothing is waiting for approval.</Empty>}

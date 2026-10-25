@@ -13,8 +13,8 @@ export default function Customers() {
   const { data, error, loading } = useLoad<{ customers: CustomerRow[] }>("/admin/customers");
   if (loading) return <Working text="Loading customers" />;
   return (
-    <div className="space-y-3">
-      <h1 className="text-2xl">Customers</h1>
+    <div className="rise space-y-5">
+      <h1 className="text-2xl font-semibold">Customers</h1>
       <ErrorText error={error} />
       {data?.customers.length === 0 && <Empty>No customer accounts yet.</Empty>}
       <Card className="overflow-x-auto">

@@ -22,8 +22,8 @@ export default function CaseLookup() {
   };
 
   return (
-    <div className="mx-auto max-w-[760px] space-y-4">
-      <h1 className="text-2xl">Case lookup</h1>
+    <div className="rise mx-auto max-w-2xl space-y-4">
+      <h1 className="text-2xl font-semibold">Case lookup</h1>
       <p className="text-sm">
         Open a specific case to authorise or reject its payment. The approval queue lists everything
         that is waiting, so you usually do not need this page.
