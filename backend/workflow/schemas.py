@@ -59,6 +59,9 @@ class AgentId(str, Enum):
     agent_3 = "agent_3"
     agent_4 = "agent_4"
     agent_5 = "agent_5"
+    # The payment rail is a service, not an agent: it moves fictional money and
+    # reports what the bank did. Separate from Agent 5's final confirmation.
+    payment_simulator = "payment_simulator"
     human_approval = "human_approval"
     human_review = "human_review"
     orchestrator = "orchestrator"
@@ -69,7 +72,8 @@ AGENT_LABELS: dict[AgentId, str] = {
     AgentId.agent_2: "Agent 2 · Bank Reconciliation Specialist",
     AgentId.agent_3: "Agent 3 · Financial Intake & Verification Agent",
     AgentId.agent_4: "Agent 4 · Payment Exception Specialist",
-    AgentId.agent_5: "Agent 5 · Payment Execution & Monitoring",
+    AgentId.agent_5: "Agent 5 · Final Confirmation & Customer Response",
+    AgentId.payment_simulator: "Payment Simulator",
     AgentId.human_approval: "Human Approval",
     AgentId.human_review: "Human Review",
     AgentId.orchestrator: "Workflow Orchestrator",
@@ -310,6 +314,9 @@ class WorkflowCase(WorkflowModel):
 
     documents: list[DocumentRef] = Field(default_factory=list)
     analysis: dict | None = None
+    # The account that owns this case. None for records predating accounts,
+    # which are kept in a restricted legacy state rather than auto-assigned.
+    owner_account_id: str | None = None
     routing: RoutingDecisionView | None = None
     agent_runs: list[AgentRun] = Field(default_factory=list)
     reports: list[AgentReport] = Field(default_factory=list)
@@ -378,3 +385,5 @@ class CaseSummary(WorkflowModel):
     why: str | None = None
     problems: list[str] = Field(default_factory=list)
     next_action: str | None = None
+    owner_account_id: str | None = None
+

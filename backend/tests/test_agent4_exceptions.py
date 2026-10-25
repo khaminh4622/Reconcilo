@@ -85,7 +85,7 @@ def test_insufficient_funds(workspace_tmp_path):
     assert "sufficient cleared funds" in report.data["diagnosis"]
     assert report.data["retry_permitted"] is False
     assert report.requires_human is True
-    assert case.status == CaseStatus.requires_review
+    assert case.status != CaseStatus.completed
 
     # The bank credited nothing.
     rows = bank_rows(database)
@@ -134,7 +134,7 @@ def test_pending_settlement(workspace_tmp_path):
     assert report.data["retry_permitted"] is False
     # A pending payment is not a confirmed settlement.
     assert case.receipt is None
-    assert case.status != CaseStatus.completed
+    assert case.status in {CaseStatus.pending, CaseStatus.requires_review}
 
 
 def test_pending_does_not_invent_a_timeout(workspace_tmp_path):

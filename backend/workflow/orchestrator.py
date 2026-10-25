@@ -23,7 +23,8 @@ from agent3.schemas import (
 from .agent1_duplicates import DuplicateInvestigator
 from .agent2_reconciliation import ReconciliationSpecialist
 from .agent4_exceptions import PaymentExceptionSpecialist
-from .agent5_execution import PaymentExecutionAgent
+from .agent5_confirmation import VERIFIED_VERDICTS, FinalConfirmationAgent
+from .payment_simulator import PaymentSimulatorService
 from .repository import WorkflowRepository
 from .schemas import (
     AGENT_LABELS,
@@ -177,7 +178,20 @@ class WorkflowOrchestrator:
         self.duplicates = DuplicateInvestigator(repository, summarizer=summarizer)
         self.reconciliation = ReconciliationSpecialist(repository)
         self.exceptions = PaymentExceptionSpecialist(repository, report_writer=report_writer)
-        self.execution = PaymentExecutionAgent(repository)
+        # Agent 5 is the FINAL agent: it confirms outcomes and answers the
+        # customer. It has no payment-execution path at all.
+        self.execution = FinalConfirmationAgent(repository)
+        # The Payment Simulator is a service, not an agent. It is the only
+        # component allowed to move fictional money.
+        self.simulator = PaymentSimulatorService(repository)
+        # `execution` is Agent 5 (confirmation only). Expose the simulator's
+        # bank and store here for backwards compatibility with existing callers.
+        self.execution.bank = self.simulator.bank
+        self.execution.store = self.simulator.store
+
+        # Keep the bank and payment store shared so a replaced bank (tests,
+        # demos) is used by both the simulator and reconciliation.
+        # The simulator owns the bank and the attempt store; tests may swap the bank.
 
     # ------------------------------------------------------------------
     # Case lifecycle
@@ -186,7 +200,7 @@ class WorkflowOrchestrator:
         """Create a case from Agent 3's analysis and route it immediately."""
 
         # An invoice with payment history is never a brand-new request.
-        prior_attempts = self.execution.store.list_for_invoice(analysis.document_id)
+        prior_attempts = self.simulator.store.list_for_invoice(analysis.document_id)
         paid_already = any(a.status == "SUCCESS" and a.verified for a in prior_attempts)
         intent = _intent_from_analysis(
             analysis,
@@ -209,59 +223,60 @@ class WorkflowOrchestrator:
         return case
 
     def _plan_runs(self, case: WorkflowCase) -> None:
-        """Pre-build the visual workflow so the UI can show what is coming."""
+        """Pre-build the visible workflow so the UI can show what is coming.
+
+        Path A (PAY_INVOICE):
+            Agent 3 -> Agent 1 -> Approval -> Simulator -> Agent 2 -> Agent 5
+
+        Path B (CUSTOMER_PROBLEM): Agent 3 -> specialist(s) -> Agent 5
+
+        The plan is replaced as the real branch becomes known: a failed payment
+        swaps Agent 2 for Agent 4, and Agent 5 always keeps its final slot.
+        """
 
         intent = case.intent
-        primary, supporting = INTENT_ROUTES[intent]
         order: list[AgentId] = [AgentId.agent_3]
+
         if intent == Intent.new_payment_request:
-            # Corrected order: Agent 5 initiates, Agent 2 checks the money, then
-            # Agent 5 confirms. Agent 5 is the final visible agent.
+            # Path A. Agent 1 checks history, a human approves, the simulator
+            # moves the money, Agent 2 verifies it, Agent 5 confirms.
             order += [
+                AgentId.agent_1,
                 AgentId.human_approval,
-                AgentId.agent_5,   # initiation
-                AgentId.agent_2,   # reconciliation
-                AgentId.agent_5,   # final confirmation
+                AgentId.payment_simulator,
+                AgentId.agent_2,
+                AgentId.agent_5,
             ]
+        elif intent in {Intent.duplicate_invoice, Intent.duplicate_payment}:
+            # Path B: a duplicate investigation, verified against the bank.
+            order += [AgentId.agent_1, AgentId.agent_2, AgentId.agent_5]
         elif intent in {
             Intent.bank_reconciliation,
             Intent.payment_status_dispute,
             Intent.payment_status_check,
         }:
-            # Existing-payment request with no duplicate to investigate:
-            # Agent 3 routes straight to Agent 2, then Agent 5 confirms.
+            # Path B: an existing-payment check goes straight to Agent 2.
             order += [AgentId.agent_2, AgentId.agent_5]
-        elif intent in {Intent.duplicate_invoice, Intent.duplicate_payment}:
-            # Agent 1 investigates, Agent 2 checks the money, Agent 5 confirms.
-            order += [AgentId.agent_1, AgentId.agent_2, AgentId.agent_5]
-        elif primary == AgentId.human_review:
-            order += [AgentId.human_review]
+        elif intent == Intent.payment_failure:
+            # Path B: a reported failure needs Agent 4, then Agent 5.
+            order += [AgentId.agent_4, AgentId.agent_5]
         else:
-            order.append(primary)
-            if supporting:
-                order.append(supporting)
+            # Path B: not enough information; a human supplies it.
+            order += [AgentId.human_review, AgentId.agent_5]
+
         planned: list[AgentRun] = []
-        seen_agent5 = 0
         for index, agent in enumerate(order):
-            phase = None
-            if agent == AgentId.agent_5:
-                # Only a new-payment case has a separate initiation step; every
-                # other route has Agent 5 confirming an existing payment.
-                if intent == Intent.new_payment_request:
-                    phase = "initiation" if seen_agent5 == 0 else "confirmation"
-                else:
-                    phase = "confirmation"
-                seen_agent5 += 1
             planned.append(
                 AgentRun(
                     agent=agent,
                     agent_name=AGENT_LABELS[agent],
                     status=AgentRunStatus.waiting,
                     order=index,
-                    phase=phase,
+                    phase="confirmation" if agent == AgentId.agent_5 else None,
                 )
             )
         case.agent_runs = planned
+
         # Agent 3 has already run by the time a case exists.
         agent3 = case.run_for(AgentId.agent_3)
         if agent3:
@@ -484,13 +499,14 @@ class WorkflowOrchestrator:
                 if analysis is not None:
                     return self.run_agent(case, AgentId.agent_1, analysis)
 
+        # Agent 5 is the FINAL agent on every path. A specialist never closes a
+        # case on its own: Agent 5 issues the customer response and decides the
+        # terminal status. This branch runs for Path B (customer problems),
+        # because Path A returns earlier through execute_payment.
+        if report.agent != AgentId.agent_5 and report.agent != AgentId.agent_4:
+            return self._finish_path_b(case)
+
         if report.resolved and not report.requires_human:
-            case.status = CaseStatus.completed
-            case.outcome = report.summary
-            case.requires_human = False
-            case.add_audit(AgentId.orchestrator, "case_completed", report.summary, CaseStatus.completed.value)
-        elif report.agent == AgentId.agent_1 and report.data.get("status") == "NO_DUPLICATE_FOUND":
-            # Agent 1 cleared the invoice: nothing left for a human to do.
             case.status = CaseStatus.completed
             case.outcome = report.summary
             case.requires_human = False
@@ -521,6 +537,30 @@ class WorkflowOrchestrator:
             )
         self.repository.save_case(case)
         return case
+
+    def _finish_path_b(self, case: WorkflowCase) -> WorkflowCase:
+        """Close a customer-problem case with Agent 5's final response."""
+
+        # An unresolved reconciliation or payment exception must be investigated
+        # before it is explained. Agent 2 has already run by this point.
+        recommendation = case.reconciliation or {}
+        verdict = recommendation.get("verdict")
+        if verdict and verdict not in VERIFIED_VERDICTS and not case.run_for(AgentId.agent_4):
+            self._investigate_exception(case, recommendation)
+
+        # Any planned specialist that did not run is skipped, never left
+        # hanging in WAITING.
+        for planned in case.agent_runs:
+            if planned.status == AgentRunStatus.waiting and planned.agent != AgentId.agent_5:
+                planned.status = AgentRunStatus.skipped
+                planned.summary = "Not required for this route."
+                planned.completed_at = utc_now()
+
+        return self._finish_with_agent5(
+            case,
+            lambda run: self.execution.explain_case(case),
+            stage="explanation",
+        )
 
     # ------------------------------------------------------------------
     # Human steps
@@ -580,6 +620,13 @@ class WorkflowOrchestrator:
                 f"Case is {case.status.value}; only a case awaiting approval can be approved."
             )
 
+        # Path A requires Agent 1's duplicate/payment-history check before any
+        # money moves. It runs here, immediately before the human decision, and
+        # only blocks when it actually finds a duplicate or an existing payment.
+        if self._run_agent1_precheck(case):
+            self.repository.save_case(case)
+            return case
+
         approval = ApprovalRecord(
             approved_by=approved_by,
             invoice_number=case.invoice_number,
@@ -612,6 +659,80 @@ class WorkflowOrchestrator:
             failure_code=failure_code,
         )
 
+    def _run_agent1_precheck(self, case: WorkflowCase) -> bool:
+        """Run Agent 1 before approval on a new-payment case.
+
+        Returns True when the check stopped the payment. A clean invoice with no
+        comparable history is *not* a blocker: the absence of history is not
+        evidence of a duplicate.
+        """
+
+        run = case.run_for(AgentId.agent_1)
+        if run is not None and run.status == AgentRunStatus.completed:
+            return False  # already investigated
+
+        if run is None:
+            run = AgentRun(
+                agent=AgentId.agent_1,
+                agent_name=AGENT_LABELS[AgentId.agent_1],
+                order=len(case.agent_runs),
+            )
+            case.agent_runs.append(run)
+
+        run.status = AgentRunStatus.running
+        run.started_at = utc_now()
+        case.add_audit(
+            AgentId.orchestrator,
+            "handoff",
+            "Agent 1 is checking existing invoices and payment history before approval.",
+        )
+        self.repository.save_case(case)
+
+        analysis = AnalysisResult.model_validate(case.analysis) if case.analysis else None
+        self.run_agent(case, AgentId.agent_1, analysis)
+
+        # `run_agent` may already have progressed the case (for example when the
+        # invoice turns out to be unpaid and still needs payment). Only
+        # intervene when the check found a reason to stop.
+        report = next(
+            (r for r in reversed(case.reports) if r.agent == AgentId.agent_1), None
+        )
+        if report is None:
+            return False
+        investigation = report.data.get("investigation") or {}
+        verdict = investigation.get("status")
+
+        # The *payment* verdict decides, not the invoice verdict. A repeated
+        # invoice that has never been paid is still payable once; only money
+        # that actually moved (or is stuck) blocks a new instruction.
+        payment_state = investigation.get("previous_payment_status")
+        blocks_payment = investigation.get("blocks_payment") is True
+
+        blocking = blocks_payment and (
+            verdict in {
+                "CONFIRMED_DUPLICATE_PAYMENT",
+                "SUSPECTED_DUPLICATE_PAYMENT",
+                "REQUIRES_BANK_VERIFICATION",
+            }
+            or payment_state in {
+                "ALREADY_PAID",
+                "DUPLICATE_PAYMENT_DETECTED",
+                "PAYMENT_PENDING",
+            }
+        )
+        if blocking:
+            case.status = CaseStatus.requires_review
+            case.requires_human = True
+            case.outcome = report.summary
+            self._ensure_human_review(case, "Agent 1 blocked this payment.")
+            return True
+
+        # No history to compare against: Agent 1 has nothing to block on.
+        if run.status == AgentRunStatus.requires_human:
+            run.status = AgentRunStatus.completed
+            run.summary = "No comparable history; nothing blocks this payment."
+        return False
+
     def reject(self, case_id: str, rejected_by: str, reason: str | None = None) -> WorkflowCase:
         case = self.repository.get_case(case_id)
         if case is None:
@@ -640,14 +761,14 @@ class WorkflowOrchestrator:
         failure_reason: str | None = None,
         failure_code: str | None = None,
     ) -> WorkflowCase:
-        """Run the approved payment through its three corrected stages.
+        """Run Path A: simulate the payment, verify it, then let Agent 5 close.
 
-        1. Agent 5 **initiates** the payment (money is asked to move).
-        2. Agent 2 **reconciles** it against the Mock Bank ledger.
-        3. Agent 5 **confirms** the final status using Agent 2's verdict.
+        The sequence is fixed:
 
-        Agent 5 never declares a payment successful before Agent 2 has checked
-        the money.
+            Approval -> Payment Simulator -> (Agent 2 | Agent 4) -> Agent 5
+
+        Agent 5 runs in **both** branches, so no required step is left waiting
+        when the case reaches its terminal status.
         """
 
         case = self.repository.get_case(case_id)
@@ -660,26 +781,25 @@ class WorkflowOrchestrator:
             self.repository.save_case(case)
             raise WorkflowError(f"Payment blocked: {blocked}")
 
-        # ---------- Stage 1: initiate the payment -------------------------
-        execute_run = case.run_for(AgentId.agent_5, "initiation") or case.run_for(AgentId.agent_5) or AgentRun(
-            agent=AgentId.agent_5,
-            agent_name=AGENT_LABELS[AgentId.agent_5],
+        # ---------- Stage 1: the Payment Simulator -------------------------
+        sim_run = case.run_for(AgentId.payment_simulator) or AgentRun(
+            agent=AgentId.payment_simulator,
+            agent_name=AGENT_LABELS[AgentId.payment_simulator],
             order=len(case.agent_runs),
-            phase="initiation",
         )
-        if execute_run not in case.agent_runs:
-            case.agent_runs.append(execute_run)
+        if sim_run not in case.agent_runs:
+            case.agent_runs.append(sim_run)
 
         case.status = CaseStatus.executing
-        execute_run.status = AgentRunStatus.running
-        execute_run.started_at = utc_now()
+        sim_run.status = AgentRunStatus.running
+        sim_run.started_at = utc_now()
         case.add_audit(
-            AgentId.agent_5,
+            AgentId.payment_simulator,
             "execution_started",
-            "Agent 5 is initiating the approved synthetic payment.",
+            "The Payment Simulator is submitting the approved instruction.",
         )
 
-        initiation = self.execution.initiate_payment(
+        initiation = self.simulator.execute(
             case,
             approval=case.approval,
             invoice_number=case.invoice_number,
@@ -695,32 +815,35 @@ class WorkflowOrchestrator:
             case.payment = PaymentAttempt.model_validate(initiation.data["attempt"])
 
         if initiation.data.get("executed") is False:
-            # No money moved: blocked or a repeated request.
-            execute_run.summary = initiation.summary
-            execute_run.completed_at = utc_now()
-            execute_run.status = (
-                AgentRunStatus.completed
-                if initiation.data.get("attempt") and not initiation.blocking
-                else AgentRunStatus.blocked
-            )
+            # No money moved: blocked, or a repeated request.
+            sim_run.summary = initiation.summary
+            sim_run.completed_at = utc_now()
+            sim_run.status = AgentRunStatus.blocked if initiation.blocking else AgentRunStatus.completed
             case.last_payment_report = initiation
-            case.add_audit(AgentId.agent_5, "execution_blocked", initiation.summary)
-            case.status = (
-                CaseStatus.pending if not initiation.blocking else CaseStatus.requires_review
-            )
+            case.add_audit(AgentId.payment_simulator, "execution_blocked", initiation.summary)
+            case.status = CaseStatus.pending if not initiation.blocking else CaseStatus.requires_review
             case.requires_human = bool(initiation.requires_human)
             case.outcome = initiation.summary
             self.repository.save_case(case)
             return case
 
-        if case.payment is not None and case.payment.status == "FAILED":
-            execute_run.summary = initiation.summary
-            execute_run.completed_at = utc_now()
-            execute_run.status = AgentRunStatus.blocked
-            case.add_audit(AgentId.agent_5, "execution_result", initiation.summary)
-            return self._payment_failed(case, initiation, failure_reason)
+        sim_run.summary = initiation.summary
+        sim_run.completed_at = utc_now()
+        sim_run.status = AgentRunStatus.completed
+        case.add_audit(AgentId.payment_simulator, "execution_result", initiation.summary)
 
-        # ---------- Stage 2: Agent 2 reconciles the money ------------------
+        # ---------- Stage 2: branch on the outcome -------------------------
+        if case.payment is not None and case.payment.status == "FAILED":
+            # A rejected instruction never reaches reconciliation.
+            self._skip_planned(case, AgentId.agent_2, "Payment was rejected; nothing to reconcile.")
+            return self._failed_branch(case, initiation, failure_reason)
+
+        return self._verify_branch(case)
+
+    # ------------------------------------------------------------------
+    def _verify_branch(self, case: WorkflowCase) -> WorkflowCase:
+        """Agent 2 verifies the money, then Agent 5 confirms."""
+
         reconcile_run = case.run_for(AgentId.agent_2)
         if reconcile_run is None:
             reconcile_run = AgentRun(
@@ -735,10 +858,6 @@ class WorkflowOrchestrator:
             reconcile_run.status = AgentRunStatus.running
             reconcile_run.started_at = utc_now()
 
-        execute_run.summary = initiation.summary
-        execute_run.completed_at = utc_now()
-        execute_run.status = AgentRunStatus.completed
-
         case.status = CaseStatus.investigating
         case.add_audit(
             AgentId.orchestrator,
@@ -747,8 +866,6 @@ class WorkflowOrchestrator:
         )
         recommendation = self.reconciliation.reconcile_payment(case)
         case.reconciliation = recommendation
-        # Record Agent 2's reconciliation as a first-class report so the case
-        # audit trail shows which agent judged the money.
         case.reports.append(self.reconciliation.reconciliation_report(case, recommendation))
         reconcile_run.summary = recommendation.get("summary")
         reconcile_run.completed_at = utc_now()
@@ -765,62 +882,61 @@ class WorkflowOrchestrator:
         )
         self.repository.save_case(case)
 
-        # ---------- Stage 3: Agent 5 confirms the final result -------------
-        confirm_run = case.run_for(AgentId.agent_5, "confirmation")
-        if confirm_run is None:
-            confirm_run = AgentRun(
-                agent=AgentId.agent_5,
-                agent_name=AGENT_LABELS[AgentId.agent_5],
-                order=len(case.agent_runs),
-                phase="confirmation",
-            )
-            case.agent_runs.append(confirm_run)
-        confirm_run.status = AgentRunStatus.running
-        confirm_run.started_at = utc_now()
+        # A verified payment needs no exception investigation.
+        self._skip_planned(case, AgentId.agent_4, "Settlement verified; no exception to investigate.")
 
-        confirmation = self.execution.confirm_payment(
-            case, recommendation, approval=case.approval
+        # An unresolved reconciliation needs Agent 4's investigation before the
+        # case can be explained. A clean MATCHED needs nobody.
+        if recommendation.get("verdict") not in VERIFIED_VERDICTS:
+            self._investigate_exception(case, recommendation)
+
+        # Agent 5 always runs last.
+        return self._finish_with_agent5(
+            case,
+            lambda run: self.execution.confirm_payment(
+                case, recommendation, approval=case.approval
+            ),
+            stage="confirmation",
         )
-        case.reports.append(confirmation)
-        case.last_payment_report = confirmation
-        if confirmation.data.get("attempt"):
-            case.payment = PaymentAttempt.model_validate(confirmation.data["attempt"])
-        if confirmation.data.get("receipt"):
-            from .schemas import PaymentReceipt
 
-            case.receipt = PaymentReceipt.model_validate(confirmation.data["receipt"])
-            case.add_audit(
-                AgentId.agent_5,
-                "receipt_issued",
-                f"Final confirmation receipt {case.receipt.receipt_id[:8]} issued "
-                f"(synthetic, {case.receipt.provider_reference}).",
+    def _investigate_exception(self, case: WorkflowCase, recommendation: dict) -> None:
+        """Run Agent 4 on an unresolved reconciliation before Agent 5 closes."""
+
+        run = case.run_for(AgentId.agent_4)
+        if run is None:
+            run = AgentRun(
+                agent=AgentId.agent_4,
+                agent_name=AGENT_LABELS[AgentId.agent_4],
+                order=len(case.agent_runs),
             )
+            case.agent_runs.append(run)
+        run.status = AgentRunStatus.running
+        run.started_at = utc_now()
 
-        confirm_run.summary = confirmation.summary
-        confirm_run.completed_at = utc_now()
-        case.add_audit(AgentId.agent_5, "execution_result", confirmation.summary)
+        case.add_audit(
+            AgentId.orchestrator,
+            "handoff",
+            f"Reconciliation reported {recommendation.get('verdict')}; Agent 4 is investigating.",
+        )
+        self.repository.save_case(case)
 
-        if confirmation.resolved:
-            confirm_run.status = AgentRunStatus.completed
-            case.status = CaseStatus.completed
-            case.requires_human = False
-            case.outcome = confirmation.summary
-            case.add_audit(
-                AgentId.orchestrator,
-                "case_completed",
-                confirmation.summary,
-                CaseStatus.completed.value,
-            )
-            self.repository.save_case(case)
-            return case
+        history = self.simulator.store.list_for_invoice(case.invoice_number)
+        report = self.exceptions.investigate(
+            case,
+            case.payment or (history[-1] if history else None),
+            None,
+            attempt_history=history,
+            reconciliation=recommendation,
+        )
+        case.reports.append(report)
+        run.summary = report.summary
+        run.completed_at = utc_now()
+        run.status = AgentRunStatus.requires_human
+        case.add_audit(AgentId.agent_4, "exception_reported", report.summary)
+        self.repository.save_case(case)
 
-        # Not confirmed: Agent 4 investigates before a human is asked to decide.
-        # A failed payment and an unresolved reconciliation both need a
-        # diagnosis, and Agent 4 is the specialist for both.
-        final_status = confirmation.data.get("final_status") or "REQUIRES_REVIEW"
-        confirm_run.status = AgentRunStatus.requires_human
-        case.requires_human = True
-        case.outcome = confirmation.summary
+    def _failed_branch(self, case: WorkflowCase, initiation: AgentReport, failure_reason) -> WorkflowCase:
+        """Agent 4 investigates the failure, then Agent 5 closes with the report."""
 
         exception_run = case.run_for(AgentId.agent_4)
         if exception_run is None:
@@ -836,21 +952,22 @@ class WorkflowOrchestrator:
             exception_run.status = AgentRunStatus.running
             exception_run.started_at = utc_now()
 
+        case.status = CaseStatus.investigating
         case.add_audit(
             AgentId.orchestrator,
             "handoff",
-            "Agent 4 is investigating why the payment could not be confirmed.",
+            "The instruction failed; Agent 4 is investigating why.",
         )
         self.repository.save_case(case)
 
-        history = self.execution.store.list_for_invoice(case.invoice_number)
+        history = self.simulator.store.list_for_invoice(case.invoice_number)
         exception_report = self.exceptions.investigate(
             case,
             case.payment or (history[-1] if history else None),
             failure_reason,
-            provider_response=confirmation.data.get("provider_response"),
+            provider_response=initiation.data.get("bank_instruction"),
             attempt_history=history,
-            reconciliation=recommendation,
+            reconciliation=case.reconciliation,
         )
         case.reports.append(exception_report)
         exception_run.summary = exception_report.summary
@@ -861,39 +978,142 @@ class WorkflowOrchestrator:
             "exception_reported",
             exception_report.next_action or exception_report.summary,
         )
+        self.repository.save_case(case)
 
-        if final_status == "PENDING":
-            case.status = CaseStatus.pending
-            case.pending_reason = (
-                f"Agent 2 reported {recommendation.get('verdict')}. "
-                "The payment is not confirmed; re-check it once the bank settles."
-            )
+        # Agent 5 still runs: it issues the final failure explanation.
+        return self._finish_with_agent5(
+            case,
+            lambda run: self.execution.report_failure(case, exception_report, case.payment),
+            stage="failure_report",
+            forced_status=CaseStatus.requires_review,
+        )
+
+    # ------------------------------------------------------------------
+    def _finish_with_agent5(
+        self,
+        case: WorkflowCase,
+        call,
+        *,
+        stage: str,
+        forced_status: CaseStatus | None = None,
+    ) -> WorkflowCase:
+        """Run Agent 5's final step and settle the case's terminal status."""
+
+        run = case.run_for(AgentId.agent_5) or AgentRun(
+            agent=AgentId.agent_5,
+            agent_name=AGENT_LABELS[AgentId.agent_5],
+            order=len(case.agent_runs),
+        )
+        if stage == "confirmation":
+            # Reuse a planned confirmation run, but never the simulator's slot.
+            planned = case.run_for(AgentId.agent_5, "confirmation")
+            if planned is not None:
+                run = planned
+        if run not in case.agent_runs:
+            case.agent_runs.append(run)
+
+        # Keep the planned order: Agent 5 always sorts last.
+        if run.order < len(case.agent_runs) - 1:
+            run.order = max(r.order for r in case.agent_runs) + 1
+
+        run.phase = stage
+        run.status = AgentRunStatus.running
+        run.started_at = utc_now()
+
+        report = call(run)
+        case.reports.append(report)
+        case.last_payment_report = report
+
+        if report.data.get("attempt"):
+            case.payment = PaymentAttempt.model_validate(report.data["attempt"])
+        if report.data.get("receipt"):
+            from .schemas import PaymentReceipt
+
+            case.receipt = PaymentReceipt.model_validate(report.data["receipt"])
             case.add_audit(
-                AgentId.orchestrator, "payment_pending", case.outcome, CaseStatus.pending.value
+                AgentId.agent_5,
+                "receipt_issued",
+                f"Receipt {case.receipt.receipt_id[:8]} issued for {case.receipt.provider_reference}.",
             )
-        else:
-            case.status = CaseStatus.requires_review
-            review = case.run_for(AgentId.human_review)
-            if review is None:
-                case.agent_runs.append(
-                    AgentRun(
-                        agent=AgentId.human_review,
-                        agent_name=AGENT_LABELS[AgentId.human_review],
-                        status=AgentRunStatus.requires_human,
-                        order=len(case.agent_runs),
-                        summary="Human must resolve the reconciliation result.",
-                    )
-                )
-            else:
-                review.status = AgentRunStatus.requires_human
+
+        run.summary = report.summary
+        run.completed_at = utc_now()
+        case.add_audit(AgentId.agent_5, "final_response", report.summary)
+
+        if report.resolved and forced_status is None:
+            run.status = AgentRunStatus.completed
+            case.status = CaseStatus.completed
+            case.requires_human = False
+            case.outcome = report.summary
+            # A confirmed case needs no human step (one may have been planned).
+            stray = case.run_for(AgentId.human_review)
+            if stray is not None and stray.status == AgentRunStatus.waiting:
+                stray.status = AgentRunStatus.skipped
+                stray.summary = "Case completed; review not required."
             case.add_audit(
                 AgentId.orchestrator,
-                "human_review_required",
-                case.outcome,
-                CaseStatus.requires_review.value,
+                "case_completed",
+                report.summary,
+                CaseStatus.completed.value,
             )
+        elif forced_status is not None:
+            run.status = AgentRunStatus.completed
+            case.status = forced_status
+            case.requires_human = True
+            case.outcome = report.summary
+            self._ensure_human_review(case, "Human must act on the final failure report.")
+        else:
+            run.status = AgentRunStatus.requires_human
+            case.requires_human = True
+            case.outcome = report.summary
+            final_status = report.data.get("final_status")
+            if final_status == "PENDING":
+                case.status = CaseStatus.pending
+                case.pending_reason = (
+                    f"Agent 2 reported {(case.reconciliation or {}).get('verdict')}. "
+                    "The payment is not confirmed; check it again once the bank settles."
+                )
+                case.add_audit(
+                    AgentId.orchestrator, "payment_pending", case.outcome, CaseStatus.pending.value
+                )
+            else:
+                case.status = CaseStatus.requires_review
+                self._ensure_human_review(case, "Human must resolve the reconciliation result.")
+
         self.repository.save_case(case)
         return case
+
+    @staticmethod
+    def _skip_planned(case: WorkflowCase, agent: AgentId, reason: str) -> None:
+        """Mark a planned step that this branch does not need."""
+
+        for run in case.agent_runs:
+            if run.agent == agent and run.status == AgentRunStatus.waiting:
+                run.status = AgentRunStatus.skipped
+                run.summary = reason
+                run.completed_at = utc_now()
+
+    def _ensure_human_review(self, case: WorkflowCase, summary: str) -> None:
+        """Add a Human Review step only when one is genuinely needed."""
+
+        review = case.run_for(AgentId.human_review)
+        if review is None:
+            case.agent_runs.append(
+                AgentRun(
+                    agent=AgentId.human_review,
+                    agent_name=AGENT_LABELS[AgentId.human_review],
+                    status=AgentRunStatus.requires_human,
+                    order=len(case.agent_runs),
+                    summary=summary,
+                )
+            )
+        else:
+            review.status = AgentRunStatus.requires_human
+            review.summary = summary
+        case.add_audit(
+            AgentId.orchestrator, "human_review_required", case.outcome or summary,
+            CaseStatus.requires_review.value,
+        )
 
     def _to_approval(self, case: WorkflowCase, report: AgentReport, investigation: dict) -> WorkflowCase:
         """Case B: an unpaid duplicate reuses the original obligation for approval."""
@@ -973,7 +1193,7 @@ class WorkflowOrchestrator:
         )
         self.repository.save_case(case)
 
-        history = self.execution.store.list_for_invoice(case.invoice_number)
+        history = self.simulator.store.list_for_invoice(case.invoice_number)
         exception_report = self.exceptions.investigate(
             case,
             case.payment or (history[-1] if history else None),

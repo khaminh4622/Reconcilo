@@ -349,8 +349,9 @@ def test_new_payment_request_routes_to_human_approval(workspace_tmp_path):
     agents = [run.agent for run in sorted(case.agent_runs, key=lambda r: r.order)]
     # Corrected order: approval, then Agent 5 initiates, Agent 2 reconciles,
     # and Agent 5 confirms.
-    assert agents[:3] == [AgentId.agent_3, AgentId.human_approval, AgentId.agent_5]
-    assert agents[3:5] == [AgentId.agent_2, AgentId.agent_5]
+    assert agents[:3] == [AgentId.agent_3, AgentId.agent_1, AgentId.human_approval]
+    assert AgentId.payment_simulator in agents
+    assert agents[-2:] == [AgentId.agent_2, AgentId.agent_5]
     # Agent 2 reconciles before Agent 5 confirms.
     assert AgentId.agent_2 in agents
     # Not generic clarification review.

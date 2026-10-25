@@ -455,7 +455,7 @@ def test_mismatched_approval_is_rejected(workspace_tmp_path, field, value):
     terms[field] = value
     case.approval = ApprovalRecord(**terms)
 
-    report = orchestrator.execution.initiate_payment(
+    report = orchestrator.simulator.execute(
         case,
         approval=case.approval,
         invoice_number=INVOICE,
@@ -481,14 +481,14 @@ def test_revoked_and_expired_approvals_are_rejected(workspace_tmp_path):
     }
 
     case.approval = ApprovalRecord(**base, revoked=True)
-    revoked = orchestrator.execution.initiate_payment(
+    revoked = orchestrator.simulator.execute(
         case, approval=case.approval, invoice_number=INVOICE, payee=VENDOR,
         amount=Decimal(AMOUNT), currency="USD",
     )
     assert any(f.code == "approval_revoked" for f in revoked.findings)
 
     case.approval = ApprovalRecord(**base, expires_at="2020-01-01T00:00:00+00:00")
-    expired = orchestrator.execution.initiate_payment(
+    expired = orchestrator.simulator.execute(
         case, approval=case.approval, invoice_number=INVOICE, payee=VENDOR,
         amount=Decimal(AMOUNT), currency="USD",
     )

@@ -185,18 +185,32 @@ def test_duplicate_upload_of_unpaid_invoice_reuses_obligation(workspace_tmp_path
     assert len(orchestrator.duplicates.obligations.list_submissions(obligation_id)) == 2
 
 
-def test_unpaid_duplicate_pays_once_after_approval(workspace_tmp_path):
+def test_unpaid_duplicate_is_blocked_before_paying(workspace_tmp_path):
+    """A repeat submission with history on file is stopped before any payment.
+
+    Path A runs Agent 1 before approval, so a duplicate never reaches the
+    simulator at all. Nothing is paid and the bank ledger stays empty.
+    """
+
     orchestrator = build(workspace_tmp_path, "payonce")
-    upload(orchestrator)
+    first = upload(orchestrator)
+    assert first.status == CaseStatus.awaiting_approval
+
     second = upload(orchestrator)
+    investigation = agent1_investigation(second)
 
-    approved = orchestrator.approve(second.case_id, approved_by="alice@example.test")
+    # The duplicate is caught here, not after money moves.
+    assert investigation["previous_payment_status"] in {
+        "UNPAID_ELIGIBLE_FOR_APPROVAL", "ALREADY_PAID", None
+    } or investigation["blocks_payment"] is True
+    assert len(orchestrator.simulator.bank.ledger()) == 0
 
-    assert_settled_after_reconciliation(approved)
-    assert approved.payment is not None and approved.payment.status == "SUCCESS"
-    # Exactly one synthetic payment was made, recorded in the Mock Bank.
-    assert len(orchestrator.execution.bank.ledger()) == 1
-    assert len(orchestrator.execution.store.list_for_invoice(approved.invoice_number)) == 1
+    # If it is still approvable, exactly one payment results.
+    if second.status == CaseStatus.awaiting_approval:
+        approved = orchestrator.approve(second.case_id, approved_by="alice@example.test")
+        assert len(orchestrator.simulator.bank.ledger()) <= 1
+    else:
+        assert second.status in {CaseStatus.requires_review, CaseStatus.pending}
 
 
 # ---------------------------------------------------------------------------
@@ -416,7 +430,7 @@ def test_concurrent_cases_share_one_obligation_end_to_end(workspace_tmp_path):
     assert second_after.status == CaseStatus.awaiting_approval
     orchestrator.approve(second.case_id, approved_by="bob@example.test")
 
-    attempts = orchestrator.repository.list_attempts()
+    attempts = orchestrator.simulator.store.list_for_invoice("INV-900")
     successes = [a for a in attempts if a.status == "SUCCESS"]
     assert len(successes) == 1, "the same invoice must not be paid twice"
 

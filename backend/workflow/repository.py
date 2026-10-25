@@ -104,10 +104,9 @@ def summarise_for_human(case: WorkflowCase) -> tuple[str, list[str], str]:
             f"or reject it."
         ).strip()
     elif case.status == CaseStatus.pending:
-        # A pending payment needs a human to check the bank, so the explanation
-        # must say so even when an agent report already supplied a summary.
-        if not why:
-            why = "The payment is not yet confirmed: the bank has not settled it."
+        # A pending payment needs a human to check the bank. This guidance is
+        # authoritative: an earlier agent's summary must not replace it.
+        why = "The payment is not yet confirmed: the bank has not settled it."
         # Authoritative for this status: a pending payment must never be retried.
         next_action = (
             "Check the payment provider for the result of the existing attempt before doing anything "
@@ -257,12 +256,24 @@ class WorkflowRepository:
     def save_case(self, case: WorkflowCase) -> None:
         conn = self._connect()
         try:
+            has_owner = "owner_account_id" in {
+                row[1] for row in conn.execute("PRAGMA table_info(workflow_cases)")
+            }
+            # Databases created before accounts existed simply skip the column.
+            owner_column = ", owner_account_id" if has_owner else ""
+            owner_slot = ", ?" if has_owner else ""
+            owner_update = (
+                ",\n                    owner_account_id = COALESCE("
+                "excluded.owner_account_id, workflow_cases.owner_account_id)"
+                if has_owner else ""
+            )
             conn.execute(
-                """
+                f"""
                 INSERT INTO workflow_cases (
                     case_id, created_at, updated_at, status, workflow, intent, customer_name,
-                    vendor_name, invoice_number, amount, currency, requires_human, outcome, case_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    vendor_name, invoice_number, amount, currency, requires_human, outcome,
+                    case_json{owner_column}
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?{owner_slot})
                 ON CONFLICT(case_id) DO UPDATE SET
                     updated_at = excluded.updated_at,
                     status = excluded.status,
@@ -275,7 +286,7 @@ class WorkflowRepository:
                     currency = excluded.currency,
                     requires_human = excluded.requires_human,
                     outcome = excluded.outcome,
-                    case_json = excluded.case_json
+                    case_json = excluded.case_json{owner_update}
                 """,
                 (
                     case.case_id,
@@ -292,6 +303,7 @@ class WorkflowRepository:
                     1 if case.requires_human else 0,
                     case.outcome,
                     case.model_dump_json(),
+                    *([case.owner_account_id] if has_owner else []),
                 ),
             )
             conn.commit()
@@ -311,8 +323,12 @@ class WorkflowRepository:
     def list_cases(self, limit: int = 50) -> list[CaseSummary]:
         conn = self._connect()
         try:
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(workflow_cases)")}
+            owner_select = "owner_account_id" if "owner_account_id" in columns else "NULL AS owner_account_id"
             rows = conn.execute(
-                "SELECT case_json FROM workflow_cases ORDER BY updated_at DESC LIMIT ?", (limit,)
+                f"SELECT case_json, {owner_select} FROM workflow_cases "
+                "ORDER BY updated_at DESC LIMIT ?",
+                (limit,),
             ).fetchall()
         finally:
             conn.close()
@@ -335,6 +351,7 @@ class WorkflowRepository:
                     currency=case.currency,
                     outcome=case.outcome,
                     requires_human=case.requires_human,
+                    owner_account_id=row["owner_account_id"],
                     why=why,
                     problems=problems,
                     next_action=next_action,

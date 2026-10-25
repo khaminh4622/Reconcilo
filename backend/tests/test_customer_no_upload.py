@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from workflow.accounts import ROLE_BANK_ADMIN
 from workflow.mock_bank import MockBank
 from workflow.orchestrator import WorkflowOrchestrator
 from workflow.repository import WorkflowRepository
@@ -24,6 +25,21 @@ from test_workflow import build_analysis
 STATIC = Path(__file__).resolve().parents[1] / "static" / "index.html"
 VENDOR = "Summit Cloud Services LLC"
 CUSTOMER = "Cedar Valley Design LLC"
+
+
+def admin_headers(app) -> dict:
+    """Sign in as a bank administrator for the internal ledger endpoints."""
+
+    from workflow.accounts import ROLE_BANK_ADMIN
+
+    email = "admin@bank.example"
+    password = "adminpass123"
+    try:
+        app.state.accounts.sign_up(email=email, password=password, role=ROLE_BANK_ADMIN)
+    except Exception:  # noqa: BLE001 - already created by an earlier test
+        pass
+    _account, token = app.state.accounts.sign_in(email=email, password=password)
+    return {"Authorization": f"Bearer {token}"}
 
 
 def build(workspace_tmp_path, name: str):
@@ -231,7 +247,7 @@ def test_ledger_endpoint_is_read_only(workspace_tmp_path):
     app.state.orchestrator = orchestrator
     client = TestClient(app)
 
-    payload = client.get("/bank/ledger").json()
+    payload = client.get("/bank/ledger", headers=admin_headers(app)).json()
     assert payload["simulated"] is True
     assert payload["count"] == 1
 

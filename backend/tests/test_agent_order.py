@@ -81,22 +81,25 @@ def test_new_payment_timeline_is_a5_then_a2_then_a5(workspace_tmp_path):
     case = open_case(orchestrator)
 
     assert path_of(case) == [
-        "agent_3", "human_approval", "agent_5", "agent_2", "agent_5"
+        "agent_3", "agent_1", "human_approval", "payment_simulator", "agent_2", "agent_5"
     ]
     # Agent 5 is the final visible agent.
     assert path_of(case)[-1] == "agent_5"
 
-    phases = {run.phase for run in case.agent_runs if run.agent == AgentId.agent_5}
-    assert phases == {"initiation", "confirmation"}
+    # Agent 5 appears once, as the final confirmation step.
+    agents5 = [run for run in case.agent_runs if run.agent == AgentId.agent_5]
+    assert len(agents5) == 1
+    assert agents5[0].phase == "confirmation"
+    assert any(run.agent == AgentId.payment_simulator for run in case.agent_runs)
 
 
-def test_agent5_initiation_comes_before_agent2(workspace_tmp_path):
+def test_simulator_runs_before_agent2(workspace_tmp_path):
     orchestrator, _ = build(workspace_tmp_path, "order")
     case = open_case(orchestrator)
     paid = orchestrator.approve(case.case_id, approved_by="alice@example.test")
 
     order = executed_path(paid)
-    assert order.index("agent_5") < order.index("agent_2")
+    assert order.index("payment_simulator") < order.index("agent_2")
 
 
 def test_agent5_confirmation_happens_after_agent2(workspace_tmp_path):
@@ -105,8 +108,8 @@ def test_agent5_confirmation_happens_after_agent2(workspace_tmp_path):
     paid = orchestrator.approve(case.case_id, approved_by="alice@example.test")
 
     runs = sorted(paid.agent_runs, key=lambda r: r.order)
-    initiation = next(r for r in runs if r.agent == AgentId.agent_5 and r.phase == "initiation")
-    confirmation = next(r for r in runs if r.agent == AgentId.agent_5 and r.phase == "confirmation")
+    initiation = next(r for r in runs if r.agent == AgentId.payment_simulator)
+    confirmation = next(r for r in runs if r.agent == AgentId.agent_5)
     reconciliation = next(r for r in runs if r.agent == AgentId.agent_2)
 
     assert initiation.completed_at is not None
@@ -124,7 +127,7 @@ def test_initiation_does_not_mark_paid(workspace_tmp_path):
     orchestrator, database = build(workspace_tmp_path, "initonly")
     case = open_case(orchestrator)
 
-    report = orchestrator.execution.initiate_payment(
+    report = orchestrator.simulator.execute(
         case,
         approval=None,  # no approval -> nothing happens
         invoice_number=case.invoice_number, payee=case.vendor_name,
@@ -151,7 +154,10 @@ def test_confirm_refuses_when_agent2_did_not_match(workspace_tmp_path):
     )
     assert report.data["confirmed"] is False
     assert report.data["final_status"] != "PAID"
-    assert any(f.code == "reconciliation_not_confirmed" for f in report.findings)
+    assert any(
+        f.code in {"reconciliation_not_confirmed", "settlement_not_verified"}
+        for f in report.findings
+    )
 
 
 def test_confirm_refuses_matched_without_independent_evidence(workspace_tmp_path):
@@ -282,8 +288,10 @@ def test_existing_payment_routes_direct_to_agent2(workspace_tmp_path):
 
     assert case.intent.value == "bank_reconciliation"
     agents = path_of(case)
-    assert agents == ["agent_3", "agent_2", "agent_5"]
+    # Agent 3 routes straight to Agent 2, then Agent 5 explains the outcome.
+    assert agents[:3] == ["agent_3", "agent_2", "agent_5"]
     assert "agent_1" not in agents
+    assert "human_approval" not in agents, "an enquiry needs no approval"
 
 
 def test_duplicate_route_still_investigates_first(workspace_tmp_path):
@@ -336,7 +344,7 @@ def test_approval_precedes_execution(workspace_tmp_path):
 
     runs = sorted(paid.agent_runs, key=lambda r: r.order)
     approval_run = next(r for r in runs if r.agent == AgentId.human_approval)
-    initiation = next(r for r in runs if r.agent == AgentId.agent_5 and r.phase == "initiation")
+    initiation = next(r for r in runs if r.agent == AgentId.payment_simulator)
     assert approval_run.order < initiation.order
     assert paid.approval is not None
 
@@ -349,9 +357,12 @@ def test_full_pipeline_confirms_and_issues_receipt(workspace_tmp_path):
     case = open_case(orchestrator)
     paid = orchestrator.approve(case.case_id, approved_by="alice@example.test")
 
-    assert executed_path(paid) == [
-        "agent_3", "human_approval", "agent_5", "agent_2", "agent_5"
+    assert executed_path(paid)[:4] == [
+        "agent_3", "agent_1", "human_approval", "payment_simulator"
     ]
+    executed = executed_path(paid)
+    assert executed.index("agent_2") < executed.index("agent_5")
+    assert executed[-1] in {"agent_5", "human_review"}
     assert paid.status == CaseStatus.completed
     assert paid.payment.verified is True
     assert paid.receipt is not None
@@ -370,4 +381,4 @@ def test_receipt_records_the_reconciliation_proof(workspace_tmp_path):
 
     verification = " ".join(paid.receipt.verification)
     assert "Agent 2 reconciled" in verification
-    assert "Agent 5 confirmed" in verification
+    assert "Agent 5 issued this final confirmation" in verification

@@ -64,13 +64,35 @@ def create_app(service: Agent3Service | None = None, dataset_directory: Path | N
         app.state.service.repository.seed_customer_references(reference_customers())
 
     # The orchestrator shares Agent 3's database file, adding its own tables.
-    workflow_repository = WorkflowRepository(
-        os.getenv("AGENT3_DB_PATH", str(BASE_DIR / "data" / "agent3.db"))
-    )
+    # When a service is injected (tests, alternate deployments) its database is
+    # authoritative, so accounts and cases always live in the same file.
+    database_path = os.getenv("AGENT3_DB_PATH", str(BASE_DIR / "data" / "agent3.db"))
+    try:
+        service_db = app.state.service.repository.path
+        if service_db:
+            database_path = str(service_db)
+    except AttributeError:
+        pass
+    workflow_repository = WorkflowRepository(database_path)
     if os.getenv("AGENT3_SEED_BANK", "1") != "0":
         workflow_repository.seed_bank_transactions(synthetic_bank_seed())
     app.state.workflow_repository = workflow_repository
     app.state.orchestrator = WorkflowOrchestrator(workflow_repository)
+
+    # Accounts, sessions and the tenancy helpers. Ownership lives in the same
+    # database as everything else, so history survives restarts.
+    from workflow.accounts import ensure_bootstrap_admin
+    from workflow.auth_api import install_auth
+    from workflow.tenancy import migrate_tenancy
+
+    # Tables are created lazily by their owners, so make sure every owned table
+    # exists before attempting to add ownership columns to it.
+    from workflow.mock_bank import MockBank as _MockBank
+
+    _MockBank(workflow_repository.path)
+    migrate_tenancy(workflow_repository.path, take_backup=True)
+    accounts = install_auth(app, workflow_repository.path)
+    ensure_bootstrap_admin(accounts, workflow_repository.path)
 
     def catalog() -> dict[str, Any]:
         return load_synthetic_dataset(app.state.dataset_directory)
@@ -99,6 +121,152 @@ def create_app(service: Agent3Service | None = None, dataset_directory: Path | N
             "llm_base_url": base_url,
             "reference_customers": app.state.service.repository.count_customers(),
             "detail": None if is_live else getattr(extractor, "reason", None),
+        }
+
+    # ------------------------------------------------------------------
+    # Accounts: sign up, sign in, sign out, who am I
+    # ------------------------------------------------------------------
+    @app.post("/auth/signup")
+    def signup(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Create a brand-new account with no history of any kind."""
+
+        from workflow.accounts import AuthError
+
+        body = payload or {}
+        try:
+            account = app.state.accounts.sign_up(
+                email=body.get("email"),
+                password=body.get("password"),
+                display_name=body.get("display_name"),
+            )
+        except AuthError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        _account, token = app.state.accounts.sign_in(
+            email=account.email, password=body.get("password")
+        )
+        return {
+            "account": account.public(),
+            "token": token,
+            "payment_history": [],
+            "cases": [],
+            "message": "No payment history yet. Upload your first invoice to get started.",
+        }
+
+    @app.post("/auth/signin")
+    def signin(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Sign in and return the account's own history. Never resets it."""
+
+        from workflow.accounts import AuthError
+
+        body = payload or {}
+        try:
+            account, token = app.state.accounts.sign_in(
+                email=body.get("email"), password=body.get("password")
+            )
+        except AuthError as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+        history = _account_history(account.account_id, account.role)
+        return {
+            "account": account.public(),
+            "token": token,
+            **history,
+            "message": (
+                f"Welcome back. {len(history['payment_history'])} payment(s) on record."
+                if history["payment_history"]
+                else "No payment history yet. Upload your first invoice to get started."
+            ),
+        }
+
+    @app.post("/auth/signout")
+    def signout(request: Request) -> dict[str, Any]:
+        resolver = request.app.state.account_context
+        token = None
+        auth = request.headers.get("authorization") or ""
+        if auth.lower().startswith("bearer "):
+            token = auth[7:].strip()
+        token = token or request.headers.get("x-account-token") or request.query_params.get("token")
+        if token:
+            app.state.accounts.sign_out(token)
+        return {"signed_out": True}
+
+    @app.get("/auth/me")
+    def whoami(request: Request) -> dict[str, Any]:
+        from workflow.auth_api import current_account
+
+        account = current_account(request)
+        if account is None:
+            raise HTTPException(status_code=401, detail="Not signed in.")
+        history = _account_history(account.account_id, account.role)
+        return {"account": account.public(), **history}
+
+    def _account_history(account_id: str, role: str) -> dict[str, Any]:
+        """Everything this account owns, read from the database."""
+
+        from workflow.accounts import ADMIN_ROLES
+
+        orchestrator = app.state.orchestrator
+        cases = orchestrator.repository.list_cases(limit=200)
+        is_admin = role in ADMIN_ROLES
+        owned_cases = [
+            c for c in cases
+            if is_admin or getattr(c, "owner_account_id", None) == account_id
+        ]
+
+        # Payments come from the simulator's attempt store, which is the
+        # authoritative record of money movement for a case.
+        payments: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for case in owned_cases:
+            for attempt in orchestrator.simulator.store.list_for_invoice(case.invoice_number):
+                if attempt.attempt_id in seen:
+                    continue
+                seen.add(attempt.attempt_id)
+                payments.append(
+                    {
+                        "attempt_id": attempt.attempt_id,
+                        "invoice_number": attempt.invoice_number,
+                        "amount": str(attempt.amount) if attempt.amount is not None else None,
+                        "currency": attempt.currency,
+                        "status": attempt.status,
+                        "verified": attempt.verified,
+                        "reference": attempt.provider_reference,
+                        "settlement_reference": attempt.settlement_reference,
+                        "settled_at": attempt.settled_at,
+                        "case_id": attempt.case_id,
+                    }
+                )
+
+        receipts = []
+        for case in owned_cases:
+            if getattr(case, "receipt", None) is not None:
+                receipts.append(
+                    {
+                        "receipt_id": case.receipt.receipt_id,
+                        "invoice_number": case.receipt.invoice_number,
+                        "amount": str(case.receipt.amount) if case.receipt.amount else None,
+                        "currency": case.receipt.currency,
+                        "settled_at": case.receipt.settled_at,
+                    }
+                )
+
+        return {
+            "payment_history": payments,
+            "cases": [
+                {
+                    "case_id": c.case_id,
+                    "invoice_number": c.invoice_number,
+                    "status": c.status.value,
+                    "intent": c.intent.value,
+                    "amount": str(c.amount) if c.amount is not None else None,
+                    "currency": c.currency,
+                    "created_at": c.created_at,
+                    "outcome": c.outcome,
+                }
+                for c in owned_cases
+            ],
+            "receipts": receipts,
         }
 
     @app.get("/customers", response_model=list[CustomerProfile])
@@ -145,30 +313,66 @@ def create_app(service: Agent3Service | None = None, dataset_directory: Path | N
 
     @app.post("/workflow/cases", response_model=WorkflowCase, status_code=201)
     async def open_case(
+        http_request: Request,
         file: Annotated[UploadFile, File(description="Customer financial PDF document")],
     ) -> WorkflowCase:
-        """Agent 3 reads the PDF, validates it, and the orchestrator routes the case."""
+        """Agent 3 reads the PDF, validates it, and the orchestrator routes the case.
 
+        The case is owned by the signed-in account, so its history stays with
+        that account forever.
+        """
+
+        from workflow.auth_api import require_customer
+
+        account = require_customer(http_request)
         document = await _read_upload(file)
         analysis = app.state.service.analyze(document)
         orchestrator: WorkflowOrchestrator = app.state.orchestrator
         case = orchestrator.open_case(analysis, filename=document.filename or "document.pdf")
+        # Stamp ownership before routing, so every later write inherits it.
+        case.owner_account_id = account.account_id
+        orchestrator.repository.save_case(case)
         return orchestrator.route(case)
 
     @app.get("/workflow/cases", response_model=list[CaseSummary])
-    def list_cases(limit: int = 50) -> list[CaseSummary]:
-        return app.state.workflow_repository.list_cases(limit=limit)
+    def list_cases(request: Request, limit: int = 50) -> list[CaseSummary]:
+        """Only this account's cases. Admins may pass all=true."""
+
+        from workflow.auth_api import current_account
+
+        account = current_account(request)
+        cases = app.state.workflow_repository.list_cases(limit=limit)
+        if account is None:
+            return []
+        if account.is_admin:
+            return cases
+        return [
+            c for c in cases
+            if getattr(c, "owner_account_id", None) == account.account_id
+        ]
 
     @app.get("/workflow/cases/{case_id}", response_model=WorkflowCase)
-    def get_case(case_id: str) -> WorkflowCase:
+    def get_case(case_id: str, request: Request) -> WorkflowCase:
+        from workflow.auth_api import assert_owner, require_customer
+
+        account = require_customer(request)
         case = app.state.orchestrator.get(case_id)
         if case is None:
             raise HTTPException(status_code=404, detail="Case not found.")
+        assert_owner(account, getattr(case, "owner_account_id", None))
         return case
 
     @app.post("/workflow/cases/{case_id}/approve", response_model=WorkflowCase)
-    def approve_case(case_id: str, request: dict[str, Any]) -> WorkflowCase:
+    def approve_case(case_id: str, request: dict[str, Any], http_request: Request) -> WorkflowCase:
         """Record human approval and let Agent 5 execute the synthetic payment."""
+
+        from workflow.auth_api import assert_owner, require_customer
+
+        account = require_customer(http_request)
+        existing = app.state.orchestrator.get(case_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail="Case not found.")
+        assert_owner(account, getattr(existing, "owner_account_id", None))
 
         approved_by = str(request.get("approved_by") or "").strip()
         if not approved_by:
@@ -185,7 +389,15 @@ def create_app(service: Agent3Service | None = None, dataset_directory: Path | N
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.post("/workflow/cases/{case_id}/reject", response_model=WorkflowCase)
-    def reject_case(case_id: str, request: dict[str, Any]) -> WorkflowCase:
+    def reject_case(case_id: str, request: dict[str, Any], http_request: Request) -> WorkflowCase:
+        from workflow.auth_api import assert_owner, require_customer
+
+        account = require_customer(http_request)
+        existing = app.state.orchestrator.get(case_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail="Case not found.")
+        assert_owner(account, getattr(existing, "owner_account_id", None))
+
         rejected_by = str(request.get("rejected_by") or "").strip()
         if not rejected_by:
             raise HTTPException(status_code=400, detail="rejected_by is required.")
@@ -195,12 +407,16 @@ def create_app(service: Agent3Service | None = None, dataset_directory: Path | N
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.get("/workflow/cases/{case_id}/investigation")
-    def get_investigation(case_id: str) -> dict[str, Any]:
+    def get_investigation(case_id: str, request: Request) -> dict[str, Any]:
         """Agent 1's duplicate investigation for a case, if it has run."""
 
+        from workflow.auth_api import assert_owner, require_customer
+
+        account = require_customer(request)
         case = app.state.orchestrator.get(case_id)
         if case is None:
             raise HTTPException(status_code=404, detail="Case not found.")
+        assert_owner(account, getattr(case, "owner_account_id", None))
         report = next((r for r in reversed(case.reports) if r.agent.value == "agent_1"), None)
         if report is None:
             raise HTTPException(status_code=404, detail="Agent 1 has not investigated this case.")
@@ -216,9 +432,15 @@ def create_app(service: Agent3Service | None = None, dataset_directory: Path | N
         }
 
     @app.get("/workflow/invoice-history")
-    def invoice_history(customer: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
-        """Prior invoices Agent 1 compares against."""
+    def invoice_history(request: Request, customer: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+        """Prior invoices Agent 1 compares against, for this account only."""
 
+        from workflow.auth_api import require_customer
+
+        account = require_customer(request)
+        # A customer may only look at their own comparables.
+        if not account.is_admin:
+            customer = account.display_name
         repository = InvoiceHistoryRepository(app.state.workflow_repository.path)
         records = repository.list_records(customer=customer, limit=limit)
         return [
@@ -250,12 +472,16 @@ def create_app(service: Agent3Service | None = None, dataset_directory: Path | N
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.get("/workflow/cases/{case_id}/receipt")
-    def get_receipt(case_id: str) -> dict[str, Any]:
+    def get_receipt(case_id: str, request: Request) -> dict[str, Any]:
         """The verified synthetic payment receipt for a case, if settled."""
 
+        from workflow.auth_api import assert_owner, require_customer
+
+        account = require_customer(request)
         case = app.state.orchestrator.get(case_id)
         if case is None:
             raise HTTPException(status_code=404, detail="Case not found.")
+        assert_owner(account, getattr(case, "owner_account_id", None))
         receipt = case.receipt
         if receipt is None:
             raise HTTPException(status_code=404, detail="No receipt: payment has not settled.")
@@ -414,14 +640,21 @@ def create_app(service: Agent3Service | None = None, dataset_directory: Path | N
 
     @app.get("/bank/ledger")
     def mock_bank_ledger(
+        request: Request,
         search: str | None = None,
         status: str | None = None,
         invoice: str | None = None,
     ) -> dict[str, Any]:
-        """The Mock Bank Ledger: every transaction the simulator created."""
+        """The Mock Bank Ledger. Administrators only.
 
+        Customers never see the raw ledger; their own payments appear under
+        /auth/me in payment_history.
+        """
+
+        from workflow.auth_api import require_admin
         from workflow.mock_bank import MockBank
 
+        require_admin(request)
         bank = MockBank(app.state.workflow_repository.path)
         rows = bank.ledger()
         if invoice:
@@ -450,10 +683,13 @@ def create_app(service: Agent3Service | None = None, dataset_directory: Path | N
         }
 
     @app.get("/bank/ledger/{entry_id}")
-    def mock_bank_entry(entry_id: str) -> dict[str, Any]:
-        """One bank transaction with its complete settlement history."""
+    def mock_bank_entry(entry_id: str, request: Request) -> dict[str, Any]:
+        """One bank transaction with its complete settlement history. Admins only."""
 
+        from workflow.auth_api import require_admin
         from workflow.mock_bank import MockBank
+
+        require_admin(request)
 
         bank = MockBank(app.state.workflow_repository.path)
         entry = bank.entry(entry_id)
@@ -474,9 +710,13 @@ def create_app(service: Agent3Service | None = None, dataset_directory: Path | N
         }
 
     @app.get("/bank/transactions")
-    def list_bank_transactions(include_outgoing: bool = False) -> dict[str, Any]:
+    def list_imported_transactions(request: Request, include_outgoing: bool = False) -> dict[str, Any]:
+        """Imported statement rows. Administrators only."""
+
+        from workflow.auth_api import require_admin
         from workflow.bank_importer import BankTransactionStore
 
+        require_admin(request)
         store = BankTransactionStore(app.state.workflow_repository.path)
         transactions = store.list_transactions(include_outgoing=include_outgoing)
         return {
@@ -487,10 +727,13 @@ def create_app(service: Agent3Service | None = None, dataset_directory: Path | N
         }
 
     @app.post("/bank/reconcile")
-    def reconcile_bank() -> dict[str, Any]:
-        """Compare expected payments against imported bank evidence."""
+    def reconcile_bank(request: Request) -> dict[str, Any]:
+        """Compare expected payments against imported bank evidence. Admins only."""
 
+        from workflow.auth_api import require_admin
         from workflow.bank_reconciliation import ReconciliationService
+
+        require_admin(request)
 
         report = ReconciliationService(app.state.workflow_repository.path).reconcile()
         return report.model_dump(mode="json")
@@ -502,7 +745,12 @@ def create_app(service: Agent3Service | None = None, dataset_directory: Path | N
         return [{"agent": agent.value, "name": label} for agent, label in AGENT_LABELS.items()]
 
     @app.get("/workflow/bank-transactions")
-    def list_bank_transactions(limit: int = 100) -> list[dict[str, Any]]:
+    def list_bank_transactions(request: Request, limit: int = 100) -> list[dict[str, Any]]:
+        """Legacy bank rows. Administrators only."""
+
+        from workflow.auth_api import require_admin
+
+        require_admin(request)
         return [
             txn.model_dump(mode="json")
             for txn in app.state.workflow_repository.list_bank_transactions(limit=limit)

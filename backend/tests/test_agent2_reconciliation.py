@@ -347,11 +347,11 @@ def test_agent2_runs_between_agent5_stages(workspace_tmp_path):
     _, paid = pay(orchestrator)
 
     runs = sorted(paid.agent_runs, key=lambda r: r.order)
-    initiation = next(r for r in runs if r.agent == AgentId.agent_5 and r.phase == "initiation")
+    simulation = next(r for r in runs if r.agent == AgentId.payment_simulator)
     reconciliation = next(r for r in runs if r.agent == AgentId.agent_2)
-    confirmation = next(r for r in runs if r.agent == AgentId.agent_5 and r.phase == "confirmation")
+    confirmation = next(r for r in runs if r.agent == AgentId.agent_5)
 
-    assert initiation.order < reconciliation.order < confirmation.order
+    assert simulation.order < reconciliation.order < confirmation.order
     assert any(r.agent == AgentId.agent_2 for r in paid.reports)
 
 

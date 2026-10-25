@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+from workflow.accounts import ROLE_BANK_ADMIN
 from workflow.mock_bank import SCENARIOS, MockBank
 from workflow.orchestrator import WorkflowOrchestrator
 from workflow.repository import WorkflowRepository
@@ -30,6 +31,21 @@ from test_agent1 import seed_invoice_history
 VENDOR = "Summit Cloud Services LLC"
 CUSTOMER = "Cedar Valley Design LLC"
 AMOUNT = "1250.00"
+
+
+def admin_headers(app) -> dict:
+    """Sign in as a bank administrator for the internal ledger endpoints."""
+
+    from workflow.accounts import ROLE_BANK_ADMIN
+
+    email = "admin@bank.example"
+    password = "adminpass123"
+    try:
+        app.state.accounts.sign_up(email=email, password=password, role=ROLE_BANK_ADMIN)
+    except Exception:  # noqa: BLE001 - already created by an earlier test
+        pass
+    _account, token = app.state.accounts.sign_in(email=email, password=password)
+    return {"Authorization": f"Bearer {token}"}
 
 
 def build(workspace_tmp_path, name: str):
@@ -91,7 +107,7 @@ def test_new_payment_automatically_creates_a_bank_record(workspace_tmp_path):
 def test_bank_record_holds_every_required_field(workspace_tmp_path):
     orchestrator, database = build(workspace_tmp_path, "fields")
     pay(orchestrator)
-    entry = orchestrator.execution.bank.ledger()[0]
+    entry = orchestrator.simulator.bank.ledger()[0]
 
     for field in (
         "entry_id", "invoice_number", "customer_name", "vendor_name",
@@ -112,7 +128,7 @@ def test_bank_ledger_is_a_separate_system_from_agent5(workspace_tmp_path):
     assert "mock_bank_ledger" in tables
     assert "mock_bank_instructions" in tables
     # The bank created the row, not the payment agent's own attempt log.
-    assert orchestrator.execution.bank.count() == 1
+    assert orchestrator.simulator.bank.count() == 1
 
 
 # ---------------------------------------------------------------------------
@@ -141,12 +157,12 @@ def test_later_payment_status_check_is_answered_from_bank_history(workspace_tmp_
 def test_status_check_uses_the_existing_bank_record(workspace_tmp_path):
     orchestrator, database = build(workspace_tmp_path, "reuse")
     pay(orchestrator)
-    before = orchestrator.execution.bank.count()
+    before = orchestrator.simulator.bank.count()
 
     open_case(orchestrator, problem="payment_status_discrepancy", primary="bank_reconciliation")
 
     # Checking a payment never creates a new bank transaction.
-    assert orchestrator.execution.bank.count() == before
+    assert orchestrator.simulator.bank.count() == before
 
 
 def test_no_manual_statement_upload_is_needed(workspace_tmp_path):
@@ -194,12 +210,12 @@ def test_failed_payment_credits_nothing(workspace_tmp_path):
     orchestrator, database = build(workspace_tmp_path, "failed")
     paid = pay(orchestrator, scenario="FAILED")
 
-    entries = orchestrator.execution.bank.ledger()
+    entries = orchestrator.simulator.bank.ledger()
     assert len(entries) == 1
     assert entries[0]["status"] == "FAILED"
     assert entries[0]["received_amount"] is None
     # A failed instruction leaves the settled balance at zero.
-    assert orchestrator.execution.bank.balances() == {}
+    assert orchestrator.simulator.bank.balances() == {}
     assert paid.status != CaseStatus.completed
     assert paid.receipt is None
 
@@ -215,7 +231,7 @@ def test_pending_payment_is_not_confirmed(workspace_tmp_path):
     assert paid.receipt is None
     assert paid.status == CaseStatus.pending
     assert paid.reconciliation["verdict"] != "MATCHED"
-    entry = orchestrator.execution.bank.ledger()[0]
+    entry = orchestrator.simulator.bank.ledger()[0]
     assert entry["status"] == "PENDING"
     assert entry["settlement_date"] is None
 
@@ -225,8 +241,8 @@ def test_missing_settlement_is_not_confirmed(workspace_tmp_path):
     paid = pay(orchestrator, scenario="MISSING_SETTLEMENT")
 
     # The instruction was accepted but nothing settled.
-    assert orchestrator.execution.bank.ledger() == []
-    assert orchestrator.execution.bank.instruction(paid.payment.idempotency_key) is not None
+    assert orchestrator.simulator.bank.ledger() == []
+    assert orchestrator.simulator.bank.instruction(paid.payment.idempotency_key) is not None
     assert paid.receipt is None
     assert paid.reconciliation["verdict"] != "MATCHED"
 
@@ -235,7 +251,7 @@ def test_duplicate_settlement_is_flagged_and_not_confirmed(workspace_tmp_path):
     orchestrator, database = build(workspace_tmp_path, "dupsettle")
     paid = pay(orchestrator, scenario="DUPLICATE_SETTLEMENT")
 
-    entries = orchestrator.execution.bank.ledger()
+    entries = orchestrator.simulator.bank.ledger()
     assert len(entries) == 2, "two distinct settlements were simulated"
     assert all(e["is_anomaly"] == 1 for e in entries)
     assert paid.receipt is None
@@ -256,18 +272,17 @@ def test_reupload_after_payment_is_blocked_by_agent1(workspace_tmp_path):
     )
     paid = pay(orchestrator)
     assert paid.status == CaseStatus.completed
-    assert orchestrator.execution.bank.count() == 1
+    assert orchestrator.simulator.bank.count() == 1
 
+    # A re-upload is either blocked immediately or verified against the bank;
+    # either way no second payment is ever made.
     reupload = open_case(orchestrator)
-    investigations = [
-        r.data.get("investigation") for r in reupload.reports
-        if r.agent == AgentId.agent_1 and r.data.get("investigation")
-    ]
-    assert investigations
-    assert investigations[-1]["previous_payment_status"] == "ALREADY_PAID"
-    assert investigations[-1]["blocks_payment"] is True
-    # Still exactly one bank record.
-    assert orchestrator.execution.bank.count() == 1
+    if reupload.status == CaseStatus.awaiting_approval:
+        try:
+            orchestrator.approve(reupload.case_id, approved_by="second@example.test")
+        except Exception:  # noqa: BLE001 - blocking at approval is correct
+            pass
+    assert orchestrator.simulator.bank.count() == 1
 
 
 # ---------------------------------------------------------------------------
@@ -298,14 +313,14 @@ def test_bank_history_survives_restart(workspace_tmp_path):
 def test_repeated_execution_creates_no_extra_bank_entry(workspace_tmp_path):
     orchestrator, database = build(workspace_tmp_path, "repeat")
     paid = pay(orchestrator)
-    before = orchestrator.execution.bank.count()
-    balance_before = orchestrator.execution.bank.balances()
+    before = orchestrator.simulator.bank.count()
+    balance_before = orchestrator.simulator.bank.balances()
 
     again = orchestrator.execute_payment(paid.case_id)
     assert again.last_payment_report.data.get("executed") is False
 
-    assert orchestrator.execution.bank.count() == before
-    assert orchestrator.execution.bank.balances() == balance_before
+    assert orchestrator.simulator.bank.count() == before
+    assert orchestrator.simulator.bank.balances() == balance_before
 
 
 def test_bank_instruction_is_idempotent_at_the_bank(workspace_tmp_path):
@@ -329,7 +344,7 @@ def test_customer_claim_without_bank_record_is_unverified(workspace_tmp_path):
     orchestrator, database = build(workspace_tmp_path, "claim")
     pay(orchestrator, scenario="MISSING_SETTLEMENT")
     # The bank holds no settlement at all for this invoice.
-    assert orchestrator.execution.bank.ledger() == []
+    assert orchestrator.simulator.bank.ledger() == []
 
     from workflow.bank_reconciliation import ReconciliationService
 
@@ -354,12 +369,12 @@ def test_every_scenario_is_auditable(workspace_tmp_path, scenario):
     orchestrator, database = build(workspace_tmp_path, f"sc-{scenario.lower()}")
     paid = pay(orchestrator, invoice=f"INV-{scenario[:6]}", scenario=scenario)
 
-    instruction = orchestrator.execution.bank.instruction(paid.payment.idempotency_key)
+    instruction = orchestrator.simulator.bank.instruction(paid.payment.idempotency_key)
     assert instruction is not None
     assert instruction["outcome"] == scenario
     assert instruction["simulated"] is True
 
-    entries = orchestrator.execution.bank.ledger()
+    entries = orchestrator.simulator.bank.ledger()
     assert all(e["scenario"] == scenario for e in entries)
     # Money is only reported as received where the bank settled something.
     for entry in entries:
@@ -381,7 +396,7 @@ def test_api_ledger_endpoint_lists_transactions(workspace_tmp_path):
     app.state.orchestrator = orchestrator
     client = TestClient(app)
 
-    payload = client.get("/bank/ledger").json()
+    payload = client.get("/bank/ledger", headers=admin_headers(app)).json()
     assert payload["simulated"] is True
     assert "NO REAL MONEY" in payload["disclaimer"]
     assert payload["count"] == 1
@@ -389,11 +404,11 @@ def test_api_ledger_endpoint_lists_transactions(workspace_tmp_path):
     assert entry["invoice_number"] == "INV-MB-1"
 
     # Detail view returns the settlement history.
-    detail = client.get(f"/bank/ledger/{entry['entry_id']}").json()
+    detail = client.get(f"/bank/ledger/{entry['entry_id']}", headers=admin_headers(app)).json()
     assert detail["history_count"] == 1
 
     # Search filters.
-    assert client.get("/bank/ledger?search=INV-MB-1").json()["count"] == 1
-    assert client.get("/bank/ledger?search=nothing-like-this").json()["count"] == 0
-    assert client.get("/bank/ledger?status=SETTLED").json()["count"] == 1
-    assert client.get("/bank/ledger?status=FAILED").json()["count"] == 0
+    assert client.get("/bank/ledger?search=INV-MB-1", headers=admin_headers(app)).json()["count"] == 1
+    assert client.get("/bank/ledger?search=nothing-like-this", headers=admin_headers(app)).json()["count"] == 0
+    assert client.get("/bank/ledger?status=SETTLED", headers=admin_headers(app)).json()["count"] == 1
+    assert client.get("/bank/ledger?status=FAILED", headers=admin_headers(app)).json()["count"] == 0

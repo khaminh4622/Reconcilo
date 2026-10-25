@@ -45,6 +45,23 @@
     .evidence { border-left:3px solid #68a6ff; padding:8px 10px; margin-top:8px; background:#f8fbff; color:#36506f; white-space:pre-wrap; }.evidence em { display:block; color:var(--muted); font-size:12px; margin-top:3px; font-style:normal; }
     .muted { color:var(--muted); }
     /* Workflow visualisation */
+    .authbar { display:flex; gap:8px; align-items:center; margin-left:auto; margin-right:10px; }
+    .modal { position:fixed; inset:0; background:#0b1a2eaa; display:flex; align-items:center;
+      justify-content:center; z-index:50; }
+    .modal.hidden { display:none; }
+    .modalbox { background:var(--paper); border-radius:14px; padding:22px; width:min(420px, 92vw);
+      box-shadow:0 18px 60px #0b1a2e55; }
+    .modalbox h2 { margin-top:0; }
+    .acct-empty { font-size:12.5px; color:var(--muted); padding:10px 0; }
+    .pathbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12.5px; }
+    .pathtag { font:700 11px ui-monospace,Menlo,monospace; letter-spacing:.04em; padding:3px 9px;
+      border-radius:5px; background:#eef3fb; color:#2f6fdd; }
+    .pathtag.problem { background:#fdf1e6; color:#9c5a12; }
+    .pathstep { display:flex; align-items:center; gap:5px; color:var(--muted); }
+    .pathstep.on { color:var(--ink); font-weight:600; }
+    .pathstep .dot { width:6px; height:6px; border-radius:50%; background:#c9d6e6; }
+    .pathstep.on .dot { background:#1f9d78; }
+    .pathstep.on.fail .dot { background:#d64545; }
     .node .ph { display:block; font-size:9px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); margin-top:1px; }
     .flow { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:10px 0 4px; }
     .node { display:flex; flex-direction:column; gap:3px; padding:9px 12px; border-radius:10px; border:1.5px solid var(--line); background:#fff; min-width:118px; }
@@ -127,11 +144,35 @@
 </head>
 <body>
   <header><div class="brand">Ghost<span>Ledger</span> / Multi-Agent</div>
-    <nav class="nav"><button id="navWorkflow" class="navbtn active" type="button">Workflow</button><button id="navBank" class="navbtn" type="button">Mock Bank Ledger</button><button id="navDev" class="navbtn" type="button" title="Developer tools">&hellip;</button></nav><div class="pill" id="engine">Checking model…</div></header>
+    <nav class="nav"><button id="navWorkflow" class="navbtn active" type="button">Workflow</button><button id="navBank" class="navbtn" type="button">Mock Bank Ledger</button><button id="navDev" class="navbtn" type="button" title="Developer tools">&hellip;</button></nav><div class="authbar"><span class="pill" id="accountPill" style="display:none"></span><button id="authOpen" class="navbtn" type="button">Sign in</button></div>
+    <div class="pill" id="engine">Checking model…</div></header>
+  <div id="authModal" class="modal hidden">
+    <div class="modalbox">
+      <h2 id="authTitle">Sign in</h2>
+      <div class="drop" style="border:none;padding:0">
+        <label for="authEmail">Email</label>
+        <input id="authEmail" type="email" autocomplete="username">
+        <label for="authPassword" style="margin-top:8px">Password</label>
+        <input id="authPassword" type="password" autocomplete="current-password">
+        <p class="notice">At least 8 characters. Never shared between accounts.</p>
+      </div>
+      <div id="authError" class="notice" style="color:#9c2a2a;display:none"></div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button id="authSubmit" type="button">Sign in</button>
+        <button id="authToggle" type="button" class="navbtn">Create an account</button>
+        <button id="authClose" type="button" class="navbtn">Cancel</button>
+      </div>
+    </div>
+  </div>
   <main id="pageWorkflow">
     <h1>Autonomous finance workflow</h1>
     <p class="intro">Agent 3 reads the document, validates it and routes the case. The orchestrator then dispatches the right specialist — and nothing is paid without human approval.</p>
     <div class="grid">
+      <section class="card" id="accountCard" style="display:none">
+        <h2>Your history</h2>
+        <div id="accountSummary"></div>
+        <div id="accountPayments"></div>
+      </section>
       <section class="card">
         <h2>1. Upload PDF</h2>
         <div class="drop">
@@ -172,8 +213,9 @@
           </div>
 
           <div class="section">
-            <h3>Workflow</h3>
-            <div id="flow" class="flow"></div>
+            <h3>Workflow path</h3>
+            <div id="pathBanner"></div>
+            <div id="flow" class="flow" style="margin-top:9px"></div>
             <p class="notice" id="flowNote"></p>
           </div>
 
@@ -277,7 +319,215 @@
     const STATUS_TONE = { completed:"passed", running:"live_llm", waiting:"not_available",
       blocked:"failed", requires_human:"unverified", skipped:"not_available" };
 
+    // ---- Accounts: sign up, sign in, history ---------------------------
+    // The session token lives in memory for this tab and is mirrored into
+    // sessionStorage so a refresh keeps the session. The payment history
+    // itself is never stored in the browser: it is always fetched from the
+    // backend, which is the source of truth.
+    let accountToken = null;
+    let accountInfo = null;
+    let authMode = "signin";
+
+    function bridgePath(path) {
+      return path;
+    }
+
+    function withAuth(options) {
+      const opts = Object.assign({}, options || {});
+      const headers = Object.assign({}, opts.headers || {});
+      if (accountToken) headers["Authorization"] = `Bearer ${accountToken}`;
+      opts.headers = headers;
+      return opts;
+    }
+
+    function setSession(token, account) {
+      accountToken = token || null;
+      accountInfo = account || null;
+      try {
+        if (token) sessionStorage.setItem("gl_token", token);
+        else sessionStorage.removeItem("gl_token");
+      } catch (e) { /* private mode */ }
+      renderAccountBar();
+    }
+
+    function renderAccountBar() {
+      const pill = byId("accountPill");
+      const btn = byId("authOpen");
+      const card = byId("accountCard");
+      if (accountInfo) {
+        pill.style.display = "";
+        pill.textContent = `${accountInfo.display_name} · ${accountInfo.role}`;
+        btn.textContent = "Sign out";
+        if (card) card.style.display = "";
+      } else {
+        pill.style.display = "none";
+        btn.textContent = "Sign in";
+        if (card) card.style.display = "none";
+      }
+    }
+
+    function openAuth(mode) {
+      authMode = mode || "signin";
+      byId("authTitle").textContent = authMode === "signup" ? "Create an account" : "Sign in";
+      byId("authSubmit").textContent = authMode === "signup" ? "Create account" : "Sign in";
+      byId("authToggle").textContent = authMode === "signup" ? "I already have an account" : "Create an account";
+      byId("authError").style.display = "none";
+      byId("authModal").classList.remove("hidden");
+    }
+
+    function closeAuth() {
+      byId("authModal").classList.add("hidden");
+      byId("authPassword").value = "";
+    }
+
+    async function submitAuth() {
+      const email = (byId("authEmail").value || "").trim();
+      const password = byId("authPassword").value || "";
+      const error = byId("authError");
+      error.style.display = "none";
+      const path = authMode === "signup" ? "/auth/signup" : "/auth/signin";
+      try {
+        const response = await fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          error.textContent = body.detail || "Could not sign in.";
+          error.style.display = "";
+          return;
+        }
+        setSession(body.token, body.account);
+        closeAuth();
+        renderAccountHistory(body);
+        loadCases();
+      } catch (e) {
+        error.textContent = e.message;
+        error.style.display = "";
+      }
+    }
+
+    async function signOut() {
+      try { await fetch("/auth/signout", withAuth({ method: "POST" })); } catch (e) { /* ignore */ }
+      setSession(null, null);
+      const summary = byId("accountSummary");
+      if (summary) summary.innerHTML = "";
+      const payments = byId("accountPayments");
+      if (payments) payments.innerHTML = "";
+      loadCases();
+    }
+
+    function renderAccountHistory(payload) {
+      const summary = byId("accountSummary");
+      const payments = byId("accountPayments");
+      const card = byId("accountCard");
+      if (!summary || !payments) return;
+      if (card) card.style.display = "";
+
+      const history = payload.payment_history || [];
+      const cases = payload.cases || [];
+
+      summary.innerHTML = `
+        <div class="facts">
+          <div class="fact"><strong>Account</strong>${esc(payload.account.display_name)}</div>
+          <div class="fact"><strong>Email</strong>${esc(payload.account.email)}</div>
+          <div class="fact"><strong>Payments</strong>${history.length}</div>
+          <div class="fact"><strong>Cases</strong>${cases.length}</div>
+        </div>
+        ${payload.message ? `<p class="notice" style="margin-top:8px">${esc(payload.message)}</p>` : ""}`;
+
+      if (!history.length) {
+        payments.innerHTML = `<div class="acct-empty">No payment history yet. Upload your first invoice to get started.</div>`;
+        return;
+      }
+
+      payments.innerHTML = `
+        <div class="scroll"><table class="bank-table">
+          <thead><tr><th>Invoice</th><th class="num">Amount</th><th>Currency</th>
+            <th>Status</th><th>Reference</th><th>Settled</th></tr></thead>
+          <tbody>${history.map(p => `
+            <tr>
+              <td>${esc(p.invoice_number || "—")}</td>
+              <td class="num">${esc(p.amount || "—")}</td>
+              <td>${esc(p.currency || "")}</td>
+              <td>${status(BANK_TONE[(p.status || "").toUpperCase()] || "unverified")} ${esc(p.status)}</td>
+              <td><code>${esc(p.reference || "—")}</code></td>
+              <td>${esc(p.settled_at || "—")}</td>
+            </tr>`).join("")}</tbody>
+        </table></div>`;
+    }
+
+    async function restoreSession() {
+      let token = null;
+      try { token = sessionStorage.getItem("gl_token"); } catch (e) { /* ignore */ }
+      if (!token) { renderAccountBar(); return; }
+      try {
+        const response = await fetch("/auth/me", { headers: { Authorization: `Bearer ${token}` } });
+        if (!response.ok) { setSession(null, null); return; }
+        const body = await response.json();
+        setSession(token, body.account);
+        renderAccountHistory(body);
+      } catch (e) {
+        setSession(null, null);
+      }
+    }
+
+    function initAuth() {
+      const open = byId("authOpen");
+      if (open) open.addEventListener("click", () => {
+        if (accountInfo) signOut();
+        else openAuth("signin");
+      });
+      const submit = byId("authSubmit");
+      if (submit) submit.addEventListener("click", submitAuth);
+      const toggle = byId("authToggle");
+      if (toggle) toggle.addEventListener("click", () => openAuth(authMode === "signup" ? "signin" : "signup"));
+      const close = byId("authClose");
+      if (close) close.addEventListener("click", closeAuth);
+      const password = byId("authPassword");
+      if (password) password.addEventListener("keydown", (e) => { if (e.key === "Enter") submitAuth(); });
+      restoreSession();
+    }
+
+    // ---- Workflow path banner (PAY_INVOICE vs CUSTOMER_PROBLEM) --------
+    const PATH_LABEL = {
+      new_payment_request: { tag: "PAY_INVOICE", cls: "" },
+      duplicate_invoice: { tag: "CUSTOMER_PROBLEM", cls: "problem" },
+      duplicate_payment: { tag: "CUSTOMER_PROBLEM", cls: "problem" },
+      bank_reconciliation: { tag: "CUSTOMER_PROBLEM", cls: "problem" },
+      payment_status_dispute: { tag: "CUSTOMER_PROBLEM", cls: "problem" },
+      PAYMENT_STATUS_CHECK: { tag: "CUSTOMER_PROBLEM", cls: "problem" },
+      payment_failure: { tag: "CUSTOMER_PROBLEM", cls: "problem" },
+      unknown: { tag: "CUSTOMER_PROBLEM", cls: "problem" },
+    };
+    const STEP_NAME = {
+      agent_3: "Agent 3", agent_1: "Agent 1", human_approval: "Approval",
+      payment_simulator: "Simulator", agent_2: "Agent 2", agent_4: "Agent 4",
+      agent_5: "Agent 5", human_review: "Human Review",
+    };
+
+    function renderPathBanner(caseData) {
+      const target = byId("pathBanner");
+      if (!target) return;
+      const meta = PATH_LABEL[caseData.intent || "unknown"] || { tag: "CUSTOMER_PROBLEM", cls: "problem" };
+      // Skipped steps are not part of this branch, and the human step is
+      // always shown last so the agent order reads correctly.
+      const runs = (caseData.agent_runs || [])
+        .slice().sort((a, b) => a.order - b.order)
+        .filter(r => r.agent !== "orchestrator" && r.status !== "skipped")
+        .sort((a, b) => (a.agent === "human_review" ? 1 : 0) - (b.agent === "human_review" ? 1 : 0));
+      const steps = runs.map(r => {
+        const done = r.status === "completed";
+        const fail = r.status === "failed" || r.status === "blocked";
+        const cls = done ? "on" : (fail ? "on fail" : "");
+        return `<span class="pathstep ${cls}"><span class="dot"></span>${esc(STEP_NAME[r.agent] || r.agent)}</span>`;
+      }).join('<span style="color:#c9d6e6">&rsaquo;</span>');
+      target.innerHTML = `<div class="pathbar"><span class="pathtag ${meta.cls}">${esc(meta.tag)}</span><span style="color:#c9d6e6">&mdash;</span>${steps}</div>`;
+    }
+
     function renderFlow(caseData) {
+      renderPathBanner(caseData);
       const runs = (caseData.agent_runs || []).slice().sort((a, b) => a.order - b.order).filter(r => r.agent !== "orchestrator");
       if (!runs.length) { byId("flow").innerHTML = ""; return; }
       const PHASE = { initiation: "initiate pay", confirmation: "confirm result" };
@@ -332,7 +582,7 @@
       try {
         const url = action === "approve" ? `/workflow/cases/${caseId}/approve` : `/workflow/cases/${caseId}/reject`;
         const body = action === "approve" ? { approved_by: who, simulate } : { rejected_by: who, reason: "Rejected from dashboard" };
-        const response = await fetch(url, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
+        const response = await fetch(url, withAuth({ method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) }));
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) { showProblem("Action could not be completed.", [payload.detail || "Request failed."]); return; }
         byId("error").classList.add("hidden");
@@ -1087,9 +1337,8 @@
       const btn = byId("execBtn");
       if (btn) { btn.disabled = true; btn.textContent = "Processing…"; }
       try {
-        const response = await fetch(`/workflow/cases/${caseId}/execute`, {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
-        });
+        const response = await fetch(`/workflow/cases/${caseId}/execute`,
+          withAuth({ method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }));
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) { showProblem("Payment could not be executed.", [payload.detail || "Request failed."]); return; }
         render(payload); loadCases();
@@ -1271,7 +1520,7 @@
 
     async function loadCases() {
       try {
-        const cases = await (await fetch("/workflow/cases?limit=8")).json();
+        const cases = await (await fetch("/workflow/cases?limit=8", withAuth())).json();
         if (!cases.length) { byId("cases").innerHTML = '<span class="muted">No cases yet.</span>'; return; }
         byId("cases").innerHTML = cases.map(c => {
           // Show what is wrong and what to do, so a case can be triaged from the list.
@@ -1290,7 +1539,7 @@
         }).join("");
         byId("cases").querySelectorAll(".case-row").forEach(row => {
           row.addEventListener("click", async () => {
-            const data = await (await fetch(`/workflow/cases/${row.dataset.id}`)).json();
+            const data = await (await fetch(`/workflow/cases/${row.dataset.id}`, withAuth())).json();
             render(data);
           });
         });
@@ -1309,7 +1558,7 @@
       this.disabled = true; const label = this.textContent; this.textContent = "Running…";
       try {
         const body = new FormData(); body.append("file", file);
-        const response = await fetch("/workflow/cases", { method:"POST", body });
+        const response = await fetch("/workflow/cases", { method:"POST", body: body, headers: withAuth().headers });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) { showProblem("This document could not be processed.", [payload.detail || "The PDF could not be read."]); return; }
         render(payload); loadCases();
@@ -1331,6 +1580,7 @@
     initReadonlyLedgerPanel();
     initBankLedgerPage();
     initDeveloperPanel();
+    initAuth();
     loadCases();
   </script>
 </body>
